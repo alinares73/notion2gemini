@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+requests
+google-genai
+pydantic
+python-dotenv

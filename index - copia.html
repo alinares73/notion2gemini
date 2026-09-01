@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Gemini + Notion</title>
+  
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#131314">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="GeminiNotion">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+
+  <!-- Librería Marked para convertir Markdown a HTML -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Google Sans', 'Roboto', sans-serif;
+    }
+
+    body {
+      background-color: #131314;
+      color: #e3e3e3;
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    header {
+      padding: 16px 20px;
+      font-size: 1.1rem;
+      font-weight: 500;
+      color: #c4c7c5;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .gemini-sparkle {
+      background: linear-gradient(135deg, #4285f4, #9b72cb, #d96570);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      font-weight: 700;
+      font-size: 1.2rem;
+    }
+
+    #chat-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      scroll-behavior: smooth;
+    }
+
+    .welcome-screen {
+      margin: auto 0;
+      text-align: left;
+      padding: 0 10px;
+    }
+
+    .welcome-title {
+      font-size: 2.2rem;
+      font-weight: 500;
+      line-height: 1.2;
+      background: linear-gradient(135deg, #4285f4, #9b72cb, #d96570);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+    }
+
+    .welcome-sub {
+      color: #8e918f;
+      font-size: 1.4rem;
+    }
+
+    .user-card {
+      align-self: flex-end;
+      background-color: #282a2c;
+      color: #e3e3e3;
+      padding: 12px 18px;
+      border-radius: 20px;
+      max-width: 85%;
+      font-size: 1rem;
+      line-height: 1.5;
+      word-wrap: break-word;
+      animation: slideUp 0.3s ease-out;
+    }
+
+    .gemini-card {
+      align-self: flex-start;
+      width: 100%;
+      font-size: 1rem;
+      line-height: 1.6;
+      color: #e3e3e3;
+      display: flex;
+      gap: 12px;
+      animation: fadeIn 0.4s ease-out;
+    }
+
+    .gemini-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #4285f4, #9b72cb, #d96570);
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .gemini-content {
+      flex: 1;
+      word-break: break-word;
+    }
+
+    .gemini-content h1, .gemini-content h2, .gemini-content h3 {
+      color: #f1f3f4;
+      margin-top: 14px;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    .gemini-content h3 {
+      font-size: 1.15rem;
+    }
+
+    .gemini-content p {
+      margin-bottom: 12px;
+    }
+
+    .gemini-content ul, .gemini-content ol {
+      margin-left: 20px;
+      margin-bottom: 12px;
+    }
+
+    .gemini-content li {
+      margin-bottom: 6px;
+    }
+
+    .gemini-content strong {
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    .gemini-content hr {
+      border: 0;
+      height: 1px;
+      background: #333537;
+      margin: 16px 0;
+    }
+
+    .gemini-content code {
+      background-color: #282a2c;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.9em;
+    }
+
+    /* Estilo personalizado para enlaces a Notion: Beige y Subrayado */
+    .gemini-content a {
+      color: #e3d5b8 !important; /* Tono beige */
+      text-decoration: underline !important;
+      text-underline-offset: 3px;
+      font-weight: 500;
+    }
+
+    .gemini-content a:hover {
+      color: #f4e8cb !important;
+    }
+
+    .typing-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #8e918f;
+      font-style: italic;
+    }
+
+    .typing-dots span {
+      width: 5px;
+      height: 5px;
+      background-color: #8e918f;
+      border-radius: 50%;
+      display: inline-block;
+      animation: blink 1.4s infinite ease-in-out both;
+    }
+
+    .typing-dots span:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .typing-dots span:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+
+    @keyframes blink {
+      0%, 80%, 100% { transform: scale(0); }
+      40% { transform: scale(1.0); }
+    }
+
+    .input-wrapper {
+      padding: 12px 16px 20px 16px;
+      background-color: #131314;
+    }
+
+    .input-pill {
+      background-color: #1e1f20;
+      border-radius: 28px;
+      display: flex;
+      align-items: center;
+      padding: 8px 16px;
+      border: 1px solid #333537;
+      transition: border-color 0.2s;
+    }
+
+    .input-pill:focus-within {
+      border-color: #5b5e62;
+    }
+
+    textarea {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #e3e3e3;
+      font-size: 1rem;
+      resize: none;
+      max-height: 120px;
+      min-height: 24px;
+      line-height: 24px;
+    }
+
+    textarea::placeholder {
+      color: #8e918f;
+    }
+
+    .send-btn {
+      background: #e3e3e3;
+      border: none;
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      margin-left: 8px;
+      transition: opacity 0.2s;
+    }
+
+    .send-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .send-btn svg {
+      fill: #131314;
+      width: 18px;
+      height: 18px;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(15px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <span class="gemini-sparkle">✦</span> Gemini + Notion
+  </header>
+
+  <main id="chat-container">
+    <div class="welcome-screen" id="welcome-screen">
+      <div class="welcome-title">Hola</div>
+      <div class="welcome-sub">¿Qué necesitas buscar o resumir de tu Notion?</div>
+    </div>
+  </main>
+
+  <div class="input-wrapper">
+    <div class="input-pill">
+      <textarea id="prompt-input" rows="1" placeholder="Pide algo a Gemini sobre tu Notion..."></textarea>
+      <button id="send-btn" class="send-btn" disabled>
+        <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(console.error);
+      });
+    }
+
+    const input = document.getElementById('prompt-input');
+    const sendBtn = document.getElementById('send-btn');
+    const chatContainer = document.getElementById('chat-container');
+    const welcomeScreen = document.getElementById('welcome-screen');
+
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = input.scrollHeight + 'px';
+      sendBtn.disabled = input.value.trim() === '';
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (input.value.trim() !== '') enviarMensaje();
+      }
+    });
+
+    sendBtn.dispatchClick = sendBtn.addEventListener('click', enviarMensaje);
+
+    async function enviarMensaje() {
+      const texto = input.value.trim();
+      if (!texto) return;
+
+      if (welcomeScreen) welcomeScreen.style.display = 'none';
+
+      const userCard = document.createElement('div');
+      userCard.className = 'user-card';
+      userCard.textContent = texto;
+      chatContainer.appendChild(userCard);
+
+      input.value = '';
+      input.style.height = 'auto';
+      sendBtn.disabled = true;
+
+      const geminiCard = document.createElement('div');
+      geminiCard.className = 'gemini-card';
+      
+      const iconDiv = document.createElement('div');
+      iconDiv.className = 'gemini-icon';
+
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'gemini-content typing-indicator';
+      contentDiv.innerHTML = `Buscando en tus notas de Notion y pensando <span class="typing-dots"><span></span><span></span><span></span></span>`;
+
+      geminiCard.appendChild(iconDiv);
+      geminiCard.appendChild(contentDiv);
+      chatContainer.appendChild(geminiCard);
+
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: texto })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        contentDiv.classList.remove('typing-indicator');
+        contentDiv.innerHTML = marked.parse(data.response);
+
+        // Interceptar clics en enlaces para abrirlos con el protocolo de la App de Notion en móviles si es posible
+        contentDiv.querySelectorAll('a').forEach(link => {
+          link.addEventListener('click', (e) => {
+            const href = link.getAttribute('href');
+            // Detectar si está en móvil (Android/iOS)
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            if (isMobile && href.includes('notion.so')) {
+              // Convertir la URL web de notion a esquema nativo notion:// para forzar apertura en app
+              e.preventDefault();
+              const notionAppUrl = href.replace('https://www.notion.so', 'notion://www.notion.so').replace('https://notion.so', 'notion://notion.so');
+              window.location.href = notionAppUrl;
+              // Fallback por si la app no está instalada: abrir web tras un pequeño retardo
+              setTimeout(() => {
+                window.open(href, '_blank');
+              }, 500);
+            }
+          });
+        });
+
+      } catch (error) {
+        contentDiv.classList.remove('typing-indicator');
+        contentDiv.textContent = 'Hubo un error al conectar con Notion o Gemini. Revisa el servidor.';
+      } finally {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      }
+    }
+  </script>
+</body>
+</html>

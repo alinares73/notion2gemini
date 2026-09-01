@@ -39,7 +39,6 @@ def procesar_pagina(item, headers):
     
     blocks_url = f"https://api.notion.com/v1/blocks/{item_id}/children"
     try:
-        # Timeout optimizado para respuestas rápidas
         b_res = requests.get(blocks_url, headers=headers, timeout=4)
         page_text = ""
         if b_res.status_code == 200:
@@ -70,8 +69,6 @@ def obtener_corpus_notion(token: str, prompt: str) -> list:
     }
     
     try:
-        # Búsqueda avanzada: delegamos en Notion para que nos dé solo el TOP 7 máximo
-        # Si encuentra menos (ej. 2), solo devolverá 2.
         payload = {
             "query": prompt, 
             "page_size": 7, 
@@ -84,7 +81,6 @@ def obtener_corpus_notion(token: str, prompt: str) -> list:
         results = res.json().get("results", [])
         font_sources = []
 
-        # Limitamos los hilos a 3 para respetar estrictamente el límite de la API de Notion
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             futures = [executor.submit(procesar_pagina, item, headers) for item in results]
             
@@ -103,7 +99,6 @@ async def chat_gemini_notion(query: UserQuery):
     if not user_prompt:
         raise HTTPException(status_code=400, detail="El prompt está vacío.")
 
-    # Obtenemos un contexto preciso y ligero
     fuentes = obtener_corpus_notion(NOTION_TOKEN, user_prompt)
     
     corpus_texto = []
@@ -167,3 +162,7 @@ async def get_manifest():
 @app.get("/sw.js")
 async def get_sw():
     return FileResponse("sw.js", media_type="application/javascript")
+
+@app.get("/icon-192.png")
+async def get_icon():
+    return FileResponse("icon-192.png")

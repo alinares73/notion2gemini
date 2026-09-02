@@ -22,7 +22,6 @@ app.add_middleware(
 NOTION_TOKEN = os.getenv("NOTION_TOKEN", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-# ⚠️ IMPORTANTE: Pon aquí el nombre exacto de la columna en tu Notion
 COLUMNA_ETIQUETAS = "Tags"
 
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
@@ -59,7 +58,6 @@ def obtener_ids_bases_de_datos(token: str, nombres_objetivo: list) -> set:
             
             titulo_lower = titulo_db.lower()
             for n in nombres_objetivo:
-                # Comprobación robusta: busca palabras sueltas. "Fichero citas" encaja con "Fichero de citas"
                 palabras = n.lower().split()
                 if all(p in titulo_lower for p in palabras):
                     db_ids.add(item.get("id"))
@@ -105,7 +103,8 @@ def extraer_tags_y_logica(prompt: str):
     tags = re.findall(r'#(\w+)', prompt)
     prompt_semantico = re.sub(r'#\w+', '', prompt).strip()
     
-    is_or = re.search(r'\b(o)\b', prompt.lower())
+    # Lógica más precisa: Solo será OR si encuentra explícitamente "#etiqueta o #etiqueta"
+    is_or = re.search(r'#\w+\s+o\s+#\w+', prompt.lower())
     logica = "or" if is_or else "and"
     
     return tags, logica, prompt_semantico
@@ -123,7 +122,7 @@ async def chat_gemini_notion(query: UserQuery):
     }
 
     # =========================================================
-    # MODO BÚSQUEDA AVANZADA (Filtro por etiquetas + IA semántica)
+    # MODO BÚSQUEDA AVANZADA 
     # =========================================================
     if query.advanced_search:
         tags, logica, prompt_semantico = extraer_tags_y_logica(user_prompt)
@@ -133,7 +132,7 @@ async def chat_gemini_notion(query: UserQuery):
         allowed_db_ids = obtener_ids_bases_de_datos(NOTION_TOKEN, query.databases) if query.databases else set()
         all_items = []
 
-        # 1er INTENTO: Búsqueda estricta en columnas con variaciones de mayúsculas/minúsculas
+        # 1er INTENTO: Búsqueda estricta. Si hay etiquetas, ESTA ES LA ÚNICA QUE SE EJECUTA.
         if tags and allowed_db_ids:
             condiciones_tags = []
             for tag in tags:
@@ -152,9 +151,8 @@ async def chat_gemini_notion(query: UserQuery):
                 except Exception:
                     pass
 
-        # 2º INTENTO (EL PARACAÍDAS): Si lo anterior falla (por nombre de columna erróneo, etc)
-        # Lanzamos una búsqueda genérica para que nunca vuelva de vacío si las notas existen
-        if not all_items:
+        # 2º INTENTO: Búsqueda global. SOLO SE EJECUTA SI NO HAY ETIQUETAS.
+        elif not tags:
             query_texto = user_prompt.replace('#', '')
             payload = {"query": query_texto, "page_size": 100, "filter": {"value": "page", "property": "object"}}
             try:
@@ -169,9 +167,8 @@ async def chat_gemini_notion(query: UserQuery):
                 pass
 
         if not all_items:
-            return {"response": "No se encontraron notas en Notion que cumplan con esos filtros/etiquetas.", "sources": []}
+            return {"response": "No se encontraron notas en Notion que cumplan ESTRICTAMENTE con esos filtros/etiquetas.", "sources": []}
 
-        # Extraemos solo títulos y URLs
         lista_notas = []
         for item in all_items:
             item_url = item.get("url", "")
@@ -197,7 +194,7 @@ async def chat_gemini_notion(query: UserQuery):
              gemini_user += f"[{i+1}] {nota['titulo']} - {nota['url']}\n"
 
         try:
-            chat = ai_client.chats.create(model="gemini-3.6-flash")
+            chat = ai_client.chats.create(model="gemini-3.8-flash")
             gem_res = chat.send_message(f"{gemini_sys}\n\n{gemini_user}")
             
             response_text = "### 🔍 Índices de Búsqueda Avanzada:\n\n" + gem_res.text
@@ -258,8 +255,7 @@ async def chat_gemini_notion(query: UserQuery):
         system_prompt = (
             "Eres un asistente conectado al espacio de Notion del usuario.\n"
             "INSTRUCCIONES OBLIGATORIAS:\n"
-            "1. Incluye abundantes citas textuales y directas basadas en el contenido de las fuentes. "
-            "Escribe las citas simplemente entre comillas dobles normales (\"ejemplo\").\n"
+            "1. Incluye abundantes citas textuales y directas basadas en el contenido de las fuentes.\n"
             "2. NO escribas nombres largos de notas dentro del texto redactado.\n"
             "3. Detrás de cada cita o afirmación importante, coloca un número de referencia correlativo entre paréntesis que sea un enlace Markdown apuntando a la fuente correspondiente: `([1](URL_DE_NOTION))`, etc.\n"
             "No inventes URLs; utiliza estrictamente las proporcionadas en cada fuente."
@@ -267,7 +263,7 @@ async def chat_gemini_notion(query: UserQuery):
 
         full_prompt = f"{system_prompt}\n\n{texto_contexto}\n\n--- PETICIÓN DEL USUARIO ---\n{user_prompt}"
 
-        chat = ai_client.chats.create(model="gemini-3.6-flash")
+        chat = ai_client.chats.create(model="gemini-3.8-flash")
         response = chat.send_message(full_prompt)
         
         return {"response": response.text, "sources": fuentes}

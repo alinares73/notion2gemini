@@ -222,7 +222,7 @@ async def chat_gemini_notion(query: UserQuery):
     )
 
     try:
-        chat = ai_client.chats.create(model="gemini-3.6-flash")
+        chat = ai_client.chats.create(model="gemini-2.5-flash")
         response = chat.send_message(full_prompt)
         
         return {

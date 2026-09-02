@@ -22,8 +22,8 @@ app.add_middleware(
 NOTION_TOKEN = os.getenv("NOTION_TOKEN", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-# ⚠️ OJO: Cambia "Etiquetas" por el nombre exacto de la propiedad en tu Notion
-COLUMNA_ETIQUETAS = "Etiquetas"
+# ⚠️ IMPORTANTE: Pon aquí el nombre exacto de la columna en tu Notion
+COLUMNA_ETIQUETAS = "Tags"
 
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -53,12 +53,17 @@ def obtener_ids_bases_de_datos(token: str, nombres_objetivo: list) -> set:
         
         db_ids = set()
         for item in res.json().get("results", []):
-            titulo = "Sin título"
+            titulo_db = ""
             for title_obj in item.get("title", []):
-                titulo = title_obj.get("plain_text", "")
-                break
-            if titulo in nombres_objetivo:
-                db_ids.add(item.get("id"))
+                titulo_db += title_obj.get("plain_text", "")
+            
+            titulo_lower = titulo_db.lower()
+            for n in nombres_objetivo:
+                # Comprobación robusta: busca palabras sueltas. "Fichero citas" encaja con "Fichero de citas"
+                palabras = n.lower().split()
+                if all(p in titulo_lower for p in palabras):
+                    db_ids.add(item.get("id"))
+                    break
         return db_ids
     except Exception:
         return set()
@@ -97,11 +102,9 @@ def procesar_pagina(item, headers):
     return None
 
 def extraer_tags_y_logica(prompt: str):
-    """Extrae las etiquetas (ej. #oración) y determina si es AND u OR"""
     tags = re.findall(r'#(\w+)', prompt)
     prompt_semantico = re.sub(r'#\w+', '', prompt).strip()
     
-    # Si detecta " o " cerca de los hashtags, asume que la lógica es OR, si no, AND.
     is_or = re.search(r'\b(o)\b', prompt.lower())
     logica = "or" if is_or else "and"
     
@@ -130,10 +133,15 @@ async def chat_gemini_notion(query: UserQuery):
         allowed_db_ids = obtener_ids_bases_de_datos(NOTION_TOKEN, query.databases) if query.databases else set()
         all_items = []
 
+        # 1er INTENTO: Búsqueda estricta en columnas con variaciones de mayúsculas/minúsculas
         if tags and allowed_db_ids:
-            # Creamos el filtro de Notion con los tags encontrados
-            condiciones = [{"property": COLUMNA_ETIQUETAS, "multi_select": {"contains": tag}} for tag in tags]
-            filtro_notion = {logica: condiciones} if len(condiciones) > 1 else condiciones[0]
+            condiciones_tags = []
+            for tag in tags:
+                variaciones = list(set([tag, tag.lower(), tag.capitalize(), tag.upper(), tag.title()]))
+                cond_or = [{"property": COLUMNA_ETIQUETAS, "multi_select": {"contains": var}} for var in variaciones]
+                condiciones_tags.append({"or": cond_or})
+                
+            filtro_notion = {logica: condiciones_tags} if len(condiciones_tags) > 1 else condiciones_tags[0]
             
             for db_id in allowed_db_ids:
                 payload = {"page_size": 100, "filter": filtro_notion}
@@ -143,9 +151,12 @@ async def chat_gemini_notion(query: UserQuery):
                         all_items.extend(res.json().get("results", []))
                 except Exception:
                     pass
-        else:
-            # Si no ha usado #etiquetas, usamos la búsqueda normal genérica de Notion
-            payload = {"query": prompt_semantico, "page_size": 100, "filter": {"value": "page", "property": "object"}}
+
+        # 2º INTENTO (EL PARACAÍDAS): Si lo anterior falla (por nombre de columna erróneo, etc)
+        # Lanzamos una búsqueda genérica para que nunca vuelva de vacío si las notas existen
+        if not all_items:
+            query_texto = user_prompt.replace('#', '')
+            payload = {"query": query_texto, "page_size": 100, "filter": {"value": "page", "property": "object"}}
             try:
                 res = requests.post("https://api.notion.com/v1/search", headers=headers, json=payload, timeout=8)
                 if res.status_code == 200:
@@ -171,9 +182,8 @@ async def chat_gemini_notion(query: UserQuery):
                     break
             lista_notas.append({"titulo": titulo, "url": item_url})
             
-        lista_notas = lista_notas[:100]  # Tope de seguridad
+        lista_notas = lista_notas[:100]
 
-        # Pedimos a Gemini que sea el cerebro elector
         gemini_sys = (
             "Eres el cerebro del Buscador Avanzado. Se ha realizado un filtrado por base de datos y etiquetas. "
             "A continuación tienes una lista de títulos de notas encontradas en Notion.\n"
@@ -182,7 +192,7 @@ async def chat_gemini_notion(query: UserQuery):
             "el título de la nota sea un enlace clickeable hacia su URL. No añadas introducciones como 'Aquí tienes...' ni conclusiones finales."
         )
         
-        gemini_user = f"INTENCIÓN DEL USUARIO: {prompt_semantico}\n\nNOTAS DISPONIBLES:\n"
+        gemini_user = f"INTENCIÓN DEL USUARIO: {user_prompt}\n\nNOTAS DISPONIBLES:\n"
         for i, nota in enumerate(lista_notas):
              gemini_user += f"[{i+1}] {nota['titulo']} - {nota['url']}\n"
 
@@ -198,14 +208,14 @@ async def chat_gemini_notion(query: UserQuery):
         
         except Exception as e:
             error_str = str(e)
-            if "429" in error_str:
+            if "429" in error_str and "RESOURCE_EXHAUSTED" in error_str:
                 raise HTTPException(status_code=429, detail={"type": "rate_limit", "wait_seconds": 60})
-            if "503" in error_str:
+            if "503" in error_str and "UNAVAILABLE" in error_str:
                 raise HTTPException(status_code=503, detail={"type": "server_busy"})
             raise HTTPException(status_code=500, detail=str(e))
 
     # =========================================================
-    # MODO BÚSQUEDA NORMAL (Resúmenes profundos con lectura de contenido)
+    # MODO BÚSQUEDA NORMAL
     # =========================================================
     try:
         url = "https://api.notion.com/v1/search"

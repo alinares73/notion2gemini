@@ -103,8 +103,7 @@ def extraer_tags_y_logica(prompt: str):
     tags = re.findall(r'#(\w+)', prompt)
     prompt_semantico = re.sub(r'#\w+', '', prompt).strip()
     
-    # Lógica más precisa: Solo será OR si encuentra explícitamente "#etiqueta o #etiqueta"
-    is_or = re.search(r'#\w+\s+o\s+#\w+', prompt.lower())
+    is_or = re.search(r'\b(o)\b', prompt.lower())
     logica = "or" if is_or else "and"
     
     return tags, logica, prompt_semantico
@@ -122,7 +121,7 @@ async def chat_gemini_notion(query: UserQuery):
     }
 
     # =========================================================
-    # MODO BÚSQUEDA AVANZADA 
+    # MODO BÚSQUEDA AVANZADA (Filtro por etiquetas nativo)
     # =========================================================
     if query.advanced_search:
         tags, logica, prompt_semantico = extraer_tags_y_logica(user_prompt)
@@ -132,14 +131,9 @@ async def chat_gemini_notion(query: UserQuery):
         allowed_db_ids = obtener_ids_bases_de_datos(NOTION_TOKEN, query.databases) if query.databases else set()
         all_items = []
 
-        # 1er INTENTO: Búsqueda estricta. Si hay etiquetas, ESTA ES LA ÚNICA QUE SE EJECUTA.
         if tags and allowed_db_ids:
-            condiciones_tags = []
-            for tag in tags:
-                variaciones = list(set([tag, tag.lower(), tag.capitalize(), tag.upper(), tag.title()]))
-                cond_or = [{"property": COLUMNA_ETIQUETAS, "multi_select": {"contains": var}} for var in variaciones]
-                condiciones_tags.append({"or": cond_or})
-                
+            # FILTRO PLANO Y ESTRICTO COMO LO PIDE LA API DE NOTION
+            condiciones_tags = [{"property": COLUMNA_ETIQUETAS, "multi_select": {"contains": tag}} for tag in tags]
             filtro_notion = {logica: condiciones_tags} if len(condiciones_tags) > 1 else condiciones_tags[0]
             
             for db_id in allowed_db_ids:
@@ -148,10 +142,12 @@ async def chat_gemini_notion(query: UserQuery):
                     res = requests.post(f"https://api.notion.com/v1/databases/{db_id}/query", headers=headers, json=payload, timeout=8)
                     if res.status_code == 200:
                         all_items.extend(res.json().get("results", []))
+                    else:
+                        print(f"Error Notion API en BD {db_id}: {res.text}")
                 except Exception:
                     pass
 
-        # 2º INTENTO: Búsqueda global. SOLO SE EJECUTA SI NO HAY ETIQUETAS.
+        # Si no se usan etiquetas (#), usa la búsqueda global
         elif not tags:
             query_texto = user_prompt.replace('#', '')
             payload = {"query": query_texto, "page_size": 100, "filter": {"value": "page", "property": "object"}}
@@ -167,8 +163,10 @@ async def chat_gemini_notion(query: UserQuery):
                 pass
 
         if not all_items:
-            return {"response": "No se encontraron notas en Notion que cumplan ESTRICTAMENTE con esos filtros/etiquetas.", "sources": []}
+            mensaje = f"No se encontraron notas con las etiquetas ({', '.join(tags)})." if tags else "No se encontraron notas en Notion."
+            return {"response": mensaje, "sources": []}
 
+        # Extraemos solo títulos y URLs
         lista_notas = []
         for item in all_items:
             item_url = item.get("url", "")
@@ -186,10 +184,10 @@ async def chat_gemini_notion(query: UserQuery):
             "A continuación tienes una lista de títulos de notas encontradas en Notion.\n"
             "Tu tarea: Analiza la intención semántica del usuario y SELECCIONA los MÁXIMO 20 TÍTULOS que mejor respondan a lo que busca.\n"
             "INSTRUCCIÓN ESTRICTA: Tu respuesta DEBE SER EXCLUSIVAMENTE una lista en formato Markdown numerado, donde "
-            "el título de la nota sea un enlace clickeable hacia su URL. No añadas introducciones como 'Aquí tienes...' ni conclusiones finales."
+            "el título de la nota sea un enlace clickeable hacia su URL. No añadas introducciones."
         )
         
-        gemini_user = f"INTENCIÓN DEL USUARIO: {user_prompt}\n\nNOTAS DISPONIBLES:\n"
+        gemini_user = f"INTENCIÓN DEL USUARIO: {prompt_semantico}\n\nNOTAS DISPONIBLES:\n"
         for i, nota in enumerate(lista_notas):
              gemini_user += f"[{i+1}] {nota['titulo']} - {nota['url']}\n"
 
@@ -199,7 +197,7 @@ async def chat_gemini_notion(query: UserQuery):
             
             response_text = "### 🔍 Índices de Búsqueda Avanzada:\n\n" + gem_res.text
             if len(lista_notas) > 20:
-                 response_text += "\n\n⚠️ **Nota:** Se han ocultado resultados adicionales. Refina tu búsqueda con etiquetas u otras palabras si no encuentras lo que buscas."
+                 response_text += "\n\n⚠️ **Nota:** Se han ocultado resultados adicionales. Refina tu búsqueda."
                  
             return {"response": response_text, "sources": []}
         
@@ -257,8 +255,7 @@ async def chat_gemini_notion(query: UserQuery):
             "INSTRUCCIONES OBLIGATORIAS:\n"
             "1. Incluye abundantes citas textuales y directas basadas en el contenido de las fuentes.\n"
             "2. NO escribas nombres largos de notas dentro del texto redactado.\n"
-            "3. Detrás de cada cita o afirmación importante, coloca un número de referencia correlativo entre paréntesis que sea un enlace Markdown apuntando a la fuente correspondiente: `([1](URL_DE_NOTION))`, etc.\n"
-            "No inventes URLs; utiliza estrictamente las proporcionadas en cada fuente."
+            "3. Detrás de cada cita o afirmación importante, coloca un número de referencia correlativo entre paréntesis que sea un enlace Markdown apuntando a la fuente correspondiente: `([1](URL_DE_NOTION))`, etc."
         )
 
         full_prompt = f"{system_prompt}\n\n{texto_contexto}\n\n--- PETICIÓN DEL USUARIO ---\n{user_prompt}"

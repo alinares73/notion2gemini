@@ -582,10 +582,14 @@
           })
         });
 
+        // Gestión de códigos de error HTTP
         if (!response.ok) {
             if (response.status === 429) {
                 const errData = await response.json();
                 throw { isRateLimit: true, waitSeconds: errData.detail.wait_seconds || 60 };
+            }
+            if (response.status === 503) {
+                throw { isServerBusy: true };
             }
             throw new Error(`Error: ${response.status}`);
         }
@@ -651,6 +655,13 @@
                     timerSpan.textContent = timeLeft;
                 }
             }, 1000);
+        } else if (error.isServerBusy) {
+            contentDiv.innerHTML = `
+              <div class="rate-limit-box" style="border-color: #f4b400; color: #e3e3e3;">
+                ⏳ <strong>Los servidores de Gemini están muy saturados ahora mismo.</strong><br>
+                Esto suele durar solo unos segundos. Por favor, pulsa enviar de nuevo.
+              </div>
+            `;
         } else {
             contentDiv.textContent = 'Hubo un error al procesar la petición. Revisa el servidor.';
         }

@@ -22,6 +22,9 @@ app.add_middleware(
 NOTION_TOKEN = os.getenv("NOTION_TOKEN", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+# ⚠️ OJO: Cambia "Etiquetas" por el nombre exacto de la propiedad en tu Notion
+COLUMNA_ETIQUETAS = "Etiquetas"
+
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 class UserQuery(BaseModel):
@@ -30,7 +33,6 @@ class UserQuery(BaseModel):
     databases: list[str] = []
 
 def obtener_ids_bases_de_datos(token: str, nombres_objetivo: list) -> set:
-    """Busca en Notion los IDs de las bases de datos cuyos nombres coincidan con los seleccionados."""
     if not nombres_objetivo:
         return set()
     
@@ -94,53 +96,16 @@ def procesar_pagina(item, headers):
         pass
     return None
 
-def buscar_en_notion(token: str, prompt: str, limit: int, target_dbs: list) -> tuple[list, bool]:
-    """Realiza la búsqueda en Notion aplicando filtros de bases de datos y límites."""
-    url = "https://api.notion.com/v1/search"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Notion-Version": "2022-06-28",
-        "Content-Type": "application/json"
-    }
+def extraer_tags_y_logica(prompt: str):
+    """Extrae las etiquetas (ej. #oración) y determina si es AND u OR"""
+    tags = re.findall(r'#(\w+)', prompt)
+    prompt_semantico = re.sub(r'#\w+', '', prompt).strip()
     
-    try:
-        # Obtenemos los IDs permitidos si el usuario filtró bases de datos
-        allowed_db_ids = obtener_ids_bases_de_datos(token, target_dbs) if target_dbs else set()
-        
-        # Solicitamos un poco más para comprobar si hay más de 20 en búsqueda avanzada
-        payload = {
-            "query": prompt, 
-            "page_size": limit + 1 if limit == 20 else limit, 
-            "filter": {"value": "page", "property": "object"}
-        }
-        res = requests.post(url, headers=headers, json=payload, timeout=5)
-        if res.status_code != 200:
-            return [], False
-
-        data = res.json()
-        results = data.get("results", [])
-        has_more = data.get("has_more", False)
-
-        # Filtrar por bases de datos seleccionadas si aplica
-        if allowed_db_ids:
-            filtered_results = []
-            for item in results:
-                parent = item.get("parent", {})
-                if parent.get("type") == "database_id" and parent.get("database_id") in allowed_db_ids:
-                    filtered_results.append(item)
-            results = filtered_results
-
-        # Comprobar si hay más del límite establecido
-        is_truncated = False
-        if len(results) > limit:
-            is_truncated = True
-            results = results[:limit]
-        elif has_more and len(results) == limit:
-            is_truncated = True
-
-        return results, is_truncated
-    except Exception:
-        return [], False
+    # Si detecta " o " cerca de los hashtags, asume que la lógica es OR, si no, AND.
+    is_or = re.search(r'\b(o)\b', prompt.lower())
+    logica = "or" if is_or else "and"
+    
+    return tags, logica, prompt_semantico
 
 @app.post("/api/chat")
 async def chat_gemini_notion(query: UserQuery):
@@ -154,93 +119,159 @@ async def chat_gemini_notion(query: UserQuery):
         "Content-Type": "application/json"
     }
 
-    # MODO BÚSQUEDA AVANZADA (Hasta 20 notas, solo títulos y enlaces, sin Gemini)
+    # =========================================================
+    # MODO BÚSQUEDA AVANZADA (Filtro por etiquetas + IA semántica)
+    # =========================================================
     if query.advanced_search:
-        results, is_truncated = buscar_en_notion(NOTION_TOKEN, user_prompt, limit=20, target_dbs=query.databases)
-        
-        if not results:
-            return {"response": "No se encontraron notas que coincidan con la búsqueda avanzada.", "sources": []}
+        tags, logica, prompt_semantico = extraer_tags_y_logica(user_prompt)
+        if not prompt_semantico:
+            prompt_semantico = "Busca las notas más relevantes"
 
-        response_lines = ["### Resultados de Búsqueda Avanzada:\n"]
-        sources = []
-        
-        for idx, item in enumerate(results):
-            item_url = item.get("url", "")
-            titulo = "Página sin título"
-            for p_name, p_val in item.get("properties", {}).items():
-                if p_val.get("type") == "title" and p_val.get("title"):
-                    titulo = p_val['title'][0].get('plain_text', 'Página sin título')
-                    break
+        allowed_db_ids = obtener_ids_bases_de_datos(NOTION_TOKEN, query.databases) if query.databases else set()
+        all_items = []
+
+        if tags and allowed_db_ids:
+            # Creamos el filtro de Notion con los tags encontrados
+            condiciones = [{"property": COLUMNA_ETIQUETAS, "multi_select": {"contains": tag}} for tag in tags]
+            filtro_notion = {logica: condiciones} if len(condiciones) > 1 else condiciones[0]
             
-            response_lines.append(f"{idx + 1}. [{titulo}]({item_url})")
-            sources.append({"titulo": titulo, "url": item_url})
+            for db_id in allowed_db_ids:
+                payload = {"page_size": 100, "filter": filtro_notion}
+                try:
+                    res = requests.post(f"https://api.notion.com/v1/databases/{db_id}/query", headers=headers, json=payload, timeout=8)
+                    if res.status_code == 200:
+                        all_items.extend(res.json().get("results", []))
+                except Exception:
+                    pass
+        else:
+            # Si no ha usado #etiquetas, usamos la búsqueda normal genérica de Notion
+            payload = {"query": prompt_semantico, "page_size": 100, "filter": {"value": "page", "property": "object"}}
+            try:
+                res = requests.post("https://api.notion.com/v1/search", headers=headers, json=payload, timeout=8)
+                if res.status_code == 200:
+                    results = res.json().get("results", [])
+                    if allowed_db_ids:
+                        all_items = [item for item in results if item.get("parent", {}).get("database_id") in allowed_db_ids]
+                    else:
+                        all_items = results
+            except Exception:
+                pass
 
-        if is_truncated:
-            response_lines.append("\n⚠️ **Refina más tu búsqueda para acotar los resultados...**")
+        if not all_items:
+            return {"response": "No se encontraron notas en Notion que cumplan con esos filtros/etiquetas.", "sources": []}
 
-        return {
-            "response": "\n".join(response_lines),
-            "sources": sources
-        }
+        # Extraemos solo títulos y URLs
+        lista_notas = []
+        for item in all_items:
+            item_url = item.get("url", "")
+            titulo = "Sin título"
+            for p_val in item.get("properties", {}).values():
+                if p_val.get("type") == "title" and p_val.get("title"):
+                    titulo = p_val["title"][0].get("plain_text", "Sin título")
+                    break
+            lista_notas.append({"titulo": titulo, "url": item_url})
+            
+        lista_notas = lista_notas[:100]  # Tope de seguridad
 
-    # MODO NORMAL (Hasta 7 notas con contenido completo procesado por Gemini)
-    results, _ = buscar_en_notion(NOTION_TOKEN, user_prompt, limit=7, target_dbs=query.databases)
-    
-    fuentes = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        futures = [executor.submit(procesar_pagina, item, headers) for item in results]
-        for future in concurrent.futures.as_completed(futures):
-            data = future.result()
-            if data:
-                fuentes.append(data)
+        # Pedimos a Gemini que sea el cerebro elector
+        gemini_sys = (
+            "Eres el cerebro del Buscador Avanzado. Se ha realizado un filtrado por base de datos y etiquetas. "
+            "A continuación tienes una lista de títulos de notas encontradas en Notion.\n"
+            "Tu tarea: Analiza la intención semántica del usuario y SELECCIONA los MÁXIMO 20 TÍTULOS que mejor respondan a lo que busca.\n"
+            "INSTRUCCIÓN ESTRICTA: Tu respuesta DEBE SER EXCLUSIVAMENTE una lista en formato Markdown numerado, donde "
+            "el título de la nota sea un enlace clickeable hacia su URL. No añadas introducciones como 'Aquí tienes...' ni conclusiones finales."
+        )
+        
+        gemini_user = f"INTENCIÓN DEL USUARIO: {prompt_semantico}\n\nNOTAS DISPONIBLES:\n"
+        for i, nota in enumerate(lista_notas):
+             gemini_user += f"[{i+1}] {nota['titulo']} - {nota['url']}\n"
 
-    corpus_texto = []
-    for idx, f in enumerate(fuentes):
-        corpus_texto.append(
-            f"--- FUENTE [{idx + 1}] ---\n"
-            f"Título de la Nota: {f['titulo']}\n"
-            f"URL de Notion: {f['url']}\n"
-            f"Contenido:\n{f['contenido']}"
+        try:
+            chat = ai_client.chats.create(model="gemini-3.6-flash")
+            gem_res = chat.send_message(f"{gemini_sys}\n\n{gemini_user}")
+            
+            response_text = "### 🔍 Índices de Búsqueda Avanzada:\n\n" + gem_res.text
+            if len(lista_notas) > 20:
+                 response_text += "\n\n⚠️ **Nota:** Se han ocultado resultados adicionales. Refina tu búsqueda con etiquetas u otras palabras si no encuentras lo que buscas."
+                 
+            return {"response": response_text, "sources": []}
+        
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str:
+                raise HTTPException(status_code=429, detail={"type": "rate_limit", "wait_seconds": 60})
+            if "503" in error_str:
+                raise HTTPException(status_code=503, detail={"type": "server_busy"})
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # =========================================================
+    # MODO BÚSQUEDA NORMAL (Resúmenes profundos con lectura de contenido)
+    # =========================================================
+    try:
+        url = "https://api.notion.com/v1/search"
+        allowed_db_ids = obtener_ids_bases_de_datos(NOTION_TOKEN, query.databases) if query.databases else set()
+        
+        payload = {"query": user_prompt, "page_size": 7, "filter": {"value": "page", "property": "object"}}
+        res = requests.post(url, headers=headers, json=payload, timeout=5)
+        results = []
+        if res.status_code == 200:
+            data = res.json().get("results", [])
+            if allowed_db_ids:
+                for item in data:
+                    parent = item.get("parent", {})
+                    if parent.get("type") == "database_id" and parent.get("database_id") in allowed_db_ids:
+                        results.append(item)
+            else:
+                results = data
+                
+        results = results[:7]
+
+        fuentes = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [executor.submit(procesar_pagina, item, headers) for item in results]
+            for future in concurrent.futures.as_completed(futures):
+                data = future.result()
+                if data:
+                    fuentes.append(data)
+
+        corpus_texto = []
+        for idx, f in enumerate(fuentes):
+            corpus_texto.append(
+                f"--- FUENTE [{idx + 1}] ---\n"
+                f"Título de la Nota: {f['titulo']}\n"
+                f"URL de Notion: {f['url']}\n"
+                f"Contenido:\n{f['contenido']}"
+            )
+
+        texto_contexto = "\n\n".join(corpus_texto) if corpus_texto else "No se encontraron notas relevantes."
+
+        system_prompt = (
+            "Eres un asistente conectado al espacio de Notion del usuario.\n"
+            "INSTRUCCIONES OBLIGATORIAS:\n"
+            "1. Incluye abundantes citas textuales y directas basadas en el contenido de las fuentes. "
+            "Escribe las citas simplemente entre comillas dobles normales (\"ejemplo\").\n"
+            "2. NO escribas nombres largos de notas dentro del texto redactado.\n"
+            "3. Detrás de cada cita o afirmación importante, coloca un número de referencia correlativo entre paréntesis que sea un enlace Markdown apuntando a la fuente correspondiente: `([1](URL_DE_NOTION))`, etc.\n"
+            "No inventes URLs; utiliza estrictamente las proporcionadas en cada fuente."
         )
 
-    texto_contexto = "\n\n".join(corpus_texto) if corpus_texto else "No se encontraron notas relevantes."
+        full_prompt = f"{system_prompt}\n\n{texto_contexto}\n\n--- PETICIÓN DEL USUARIO ---\n{user_prompt}"
 
-    system_prompt = (
-        "Eres un asistente conectado al espacio de Notion del usuario.\n"
-        "INSTRUCCIONES OBLIGATORIAS:\n"
-        "1. Incluye abundantes citas textuales y directas basadas en el contenido de las fuentes. "
-        "Escribe las citas simplemente entre comillas dobles normales (\"ejemplo\"), sin usar bloques de código, cursivas especiales ni formatos que cambien el color del texto.\n"
-        "2. NO escribas nombres largos de notas dentro del texto redactado.\n"
-        "3. Detrás de cada cita o afirmación importante, coloca un número de referencia correlativo entre paréntesis que sea un enlace Markdown apuntando a la fuente correspondiente, con este formato exacto: `([1](URL_DE_NOTION))`, `([2](URL_DE_NOTION))`, etc.\n"
-        "No inventes URLs; utiliza estrictamente las proporcionadas en cada fuente."
-    )
-
-    full_prompt = (
-        f"{system_prompt}\n\n"
-        f"{texto_contexto}\n\n"
-        f"--- PETICIÓN DEL USUARIO --.~(\n{user_prompt})" if False else f"{system_prompt}\n\n{texto_contexto}\n\n--- PETICIÓN DEL USUARIO ---\n{user_prompt}"
-    )
-
-    try:
-        chat = ai_client.chats.create(model="gemini-2.5-flash")
+        chat = ai_client.chats.create(model="gemini-3.6-flash")
         response = chat.send_message(full_prompt)
         
-        return {
-            "response": response.text,
-            "sources": fuentes
-        }
+        return {"response": response.text, "sources": fuentes}
+        
     except Exception as e:
         error_str = str(e)
         print("--- ERROR DETALLADO EN /api/chat ---")
         traceback.print_exc()
-        
         if "429" in error_str and "RESOURCE_EXHAUSTED" in error_str:
             match = re.search(r'retry in ([\d\.]+)s', error_str)
             wait_seconds = int(float(match.group(1))) + 1 if match else 60
-            raise HTTPException(
-                status_code=429, 
-                detail={"type": "rate_limit", "wait_seconds": wait_seconds}
-            )
+            raise HTTPException(status_code=429, detail={"type": "rate_limit", "wait_seconds": wait_seconds})
+        if "503" in error_str and "UNAVAILABLE" in error_str:
+            raise HTTPException(status_code=503, detail={"type": "server_busy"})
             
         raise HTTPException(status_code=500, detail=str(e))
 

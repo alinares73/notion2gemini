@@ -52,6 +52,40 @@
       font-size: 1.2rem;
     }
 
+    .header-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+    }
+
+    .header-icon-btn {
+      background: #1e1f20;
+      border: 1px solid #333537;
+      color: #c4c7c5;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.2s;
+    }
+
+    .header-icon-btn:hover {
+      background-color: #282a2c;
+      color: #ffffff;
+      border-color: #5b5e62;
+    }
+
+    /* Botón de Búsqueda Avanzada activo (Rojo) */
+    .header-icon-btn.advanced-active {
+      background-color: #3a1d21;
+      border-color: #d96570;
+      color: #d96570;
+    }
+
     #chat-container {
       flex: 1;
       overflow-y: auto;
@@ -173,7 +207,6 @@
       font-size: 0.9em;
     }
 
-    /* Enlaces en beige y subrayados */
     .gemini-content a {
       color: #e3d5b8 !important;
       text-decoration: underline !important;
@@ -185,7 +218,6 @@
       color: #f4e8cb !important;
     }
 
-    /* Barra de acciones (Copiar) */
     .action-bar {
       display: flex;
       gap: 12px;
@@ -236,13 +268,8 @@
       animation: blink 1.4s infinite ease-in-out both;
     }
 
-    .typing-dots span:nth-child(2) {
-      animation-delay: 0.2s;
-    }
-
-    .typing-dots span:nth-child(3) {
-      animation-delay: 0.4s;
-    }
+    .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
 
     @keyframes blink {
       0%, 80%, 100% { transform: scale(0); }
@@ -296,7 +323,7 @@
       justify-content: center;
       cursor: pointer;
       margin-left: 8px;
-      transition: opacity 0.2s;
+      transition: all 0.2s;
     }
 
     .send-btn:disabled {
@@ -308,6 +335,68 @@
       fill: #131314;
       width: 18px;
       height: 18px;
+      transition: fill 0.2s;
+    }
+
+    /* Flecha roja cuando Búsqueda Avanzada está activa */
+    .send-btn.advanced-active {
+      background: #3a1d21;
+      border: 1px solid #d96570;
+    }
+    .send-btn.advanced-active svg {
+      fill: #d96570;
+    }
+
+    /* Modal de Fuentes */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      animation: fadeIn 0.2s;
+    }
+
+    .modal-card {
+      background: #1e1f20;
+      border: 1px solid #333537;
+      padding: 24px;
+      border-radius: 16px;
+      width: 90%;
+      max-width: 340px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .modal-title {
+      font-size: 1.1rem;
+      font-weight: 500;
+      color: #f1f3f4;
+    }
+
+    .checkbox-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.95rem;
+      color: #e3e3e3;
+      cursor: pointer;
+    }
+
+    .checkbox-label input {
+      accent-color: #4285f4;
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
     }
 
     @keyframes slideUp {
@@ -334,7 +423,30 @@
 
   <header>
     <span class="gemini-sparkle">✦</span> Gemini + Notion
+    <div class="header-actions">
+      <button id="sources-btn" class="header-icon-btn" title="Elegir Fuentes">📁</button>
+      <button id="advanced-btn" class="header-icon-btn" title="Búsqueda Avanzada">🔍</button>
+    </div>
   </header>
+
+  <!-- Modal para seleccionar Fuentes -->
+  <div id="sources-modal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-title">Limitar consulta a fuentes:</div>
+      <div class="checkbox-group">
+        <label class="checkbox-label">
+          <input type="checkbox" class="db-checkbox" value="Fichero citas" checked> Fichero citas
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" class="db-checkbox" value="Diario oración" checked> Diario oración
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" class="db-checkbox" value="Resúmenes de libros" checked> Resúmenes de libros
+        </label>
+      </div>
+      <button id="close-modal-btn" class="action-btn" style="justify-content: center; margin-top: 8px;">Aceptar</button>
+    </div>
+  </div>
 
   <main id="chat-container">
     <div class="welcome-screen" id="welcome-screen">
@@ -363,6 +475,33 @@
     const sendBtn = document.getElementById('send-btn');
     const chatContainer = document.getElementById('chat-container');
     const welcomeScreen = document.getElementById('welcome-screen');
+    
+    const sourcesBtn = document.getElementById('sources-btn');
+    const sourcesModal = document.getElementById('sources-modal');
+    const closeModalBtn = document.getElementById('close-modal-btn');
+    const advancedBtn = document.getElementById('advanced-btn');
+
+    let isAdvancedMode = false;
+
+    // Control del modal de fuentes
+    sourcesBtn.addEventListener('click', () => {
+      sourcesModal.style.display = 'flex';
+    });
+
+    closeModalBtn.addEventListener('click', () => {
+      sourcesModal.style.display = 'none';
+    });
+
+    sourcesModal.addEventListener('click', (e) => {
+      if (e.target === sourcesModal) sourcesModal.style.display = 'none';
+    });
+
+    // Control del botón de Búsqueda Avanzada
+    advancedBtn.addEventListener('click', () => {
+      isAdvancedMode = !isAdvancedMode;
+      advancedBtn.classList.toggle('advanced-active', isAdvancedMode);
+      sendBtn.classList.toggle('advanced-active', isAdvancedMode);
+    });
 
     input.addEventListener('input', () => {
       input.style.height = 'auto';
@@ -385,6 +524,10 @@
 
       if (welcomeScreen) welcomeScreen.style.display = 'none';
 
+      // Obtener bases de datos seleccionadas
+      const selectedDatabases = Array.from(document.querySelectorAll('.db-checkbox:checked'))
+        .map(cb => cb.value);
+
       const userCard = document.createElement('div');
       userCard.className = 'user-card';
       userCard.textContent = texto;
@@ -405,7 +548,11 @@
 
       const contentDiv = document.createElement('div');
       contentDiv.className = 'gemini-content typing-indicator';
-      contentDiv.innerHTML = `Buscando en tus notas de Notion y pensando <span class="typing-dots"><span></span><span></span><span></span></span>`;
+      
+      const loadingText = isAdvancedMode 
+        ? `Buscando en tus notas avanzadas de Notion <span class="typing-dots"><span></span><span></span><span></span></span>`
+        : `Buscando en tus notas de Notion y pensando <span class="typing-dots"><span></span><span></span><span></span></span>`;
+      contentDiv.innerHTML = loadingText;
 
       geminiCard.appendChild(iconDiv);
       geminiCard.appendChild(contentDiv);
@@ -418,13 +565,16 @@
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: texto })
+          body: JSON.stringify({ 
+            prompt: texto, 
+            advanced_search: isAdvancedMode,
+            databases: selectedDatabases
+          })
         });
 
         if (!response.ok) {
             if (response.status === 429) {
                 const errData = await response.json();
-                // Lanzamos un objeto de error específico para el catch
                 throw { isRateLimit: true, waitSeconds: errData.detail.wait_seconds || 60 };
             }
             throw new Error(`Error: ${response.status}`);
@@ -470,7 +620,6 @@
       } catch (error) {
         contentDiv.classList.remove('typing-indicator');
         
-        // Manejar visualmente el error de Rate Limit (Límite de cuota)
         if (error.isRateLimit) {
             let timeLeft = error.waitSeconds;
             contentDiv.innerHTML = `

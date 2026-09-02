@@ -26,6 +26,40 @@ ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 class UserQuery(BaseModel):
     prompt: str
+    advanced_search: bool = False
+    databases: list[str] = []
+
+def obtener_ids_bases_de_datos(token: str, nombres_objetivo: list) -> set:
+    """Busca en Notion los IDs de las bases de datos cuyos nombres coincidan con los seleccionados."""
+    if not nombres_objetivo:
+        return set()
+    
+    url = "https://api.notion.com/v1/search"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json"
+    }
+    try:
+        payload = {
+            "filter": {"value": "database", "property": "object"},
+            "page_size": 50
+        }
+        res = requests.post(url, headers=headers, json=payload, timeout=5)
+        if res.status_code != 200:
+            return set()
+        
+        db_ids = set()
+        for item in res.json().get("results", []):
+            titulo = "Sin título"
+            for title_obj in item.get("title", []):
+                titulo = title_obj.get("plain_text", "")
+                break
+            if titulo in nombres_objetivo:
+                db_ids.add(item.get("id"))
+        return db_ids
+    except Exception:
+        return set()
 
 def procesar_pagina(item, headers):
     item_id = item.get("id")
@@ -60,7 +94,8 @@ def procesar_pagina(item, headers):
         pass
     return None
 
-def obtener_corpus_notion(token: str, prompt: str) -> list:
+def buscar_en_notion(token: str, prompt: str, limit: int, target_dbs: list) -> tuple[list, bool]:
+    """Realiza la búsqueda en Notion aplicando filtros de bases de datos y límites."""
     url = "https://api.notion.com/v1/search"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -69,29 +104,43 @@ def obtener_corpus_notion(token: str, prompt: str) -> list:
     }
     
     try:
+        # Obtenemos los IDs permitidos si el usuario filtró bases de datos
+        allowed_db_ids = obtener_ids_bases_de_datos(token, target_dbs) if target_dbs else set()
+        
+        # Solicitamos un poco más para comprobar si hay más de 20 en búsqueda avanzada
         payload = {
             "query": prompt, 
-            "page_size": 7, 
+            "page_size": limit + 1 if limit == 20 else limit, 
             "filter": {"value": "page", "property": "object"}
         }
         res = requests.post(url, headers=headers, json=payload, timeout=5)
         if res.status_code != 200:
-            return []
+            return [], False
 
-        results = res.json().get("results", [])
-        font_sources = []
+        data = res.json()
+        results = data.get("results", [])
+        has_more = data.get("has_more", False)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [executor.submit(procesar_pagina, item, headers) for item in results]
-            
-            for future in concurrent.futures.as_completed(futures):
-                data = future.result()
-                if data:
-                    font_sources.append(data)
+        # Filtrar por bases de datos seleccionadas si aplica
+        if allowed_db_ids:
+            filtered_results = []
+            for item in results:
+                parent = item.get("parent", {})
+                if parent.get("type") == "database_id" and parent.get("database_id") in allowed_db_ids:
+                    filtered_results.append(item)
+            results = filtered_results
 
-        return font_sources
+        # Comprobar si hay más del límite establecido
+        is_truncated = False
+        if len(results) > limit:
+            is_truncated = True
+            results = results[:limit]
+        elif has_more and len(results) == limit:
+            is_truncated = True
+
+        return results, is_truncated
     except Exception:
-        return []
+        return [], False
 
 @app.post("/api/chat")
 async def chat_gemini_notion(query: UserQuery):
@@ -99,8 +148,52 @@ async def chat_gemini_notion(query: UserQuery):
     if not user_prompt:
         raise HTTPException(status_code=400, detail="El prompt está vacío.")
 
-    fuentes = obtener_corpus_notion(NOTION_TOKEN, user_prompt)
+    headers = {
+        "Authorization": f"Bearer {NOTION_TOKEN}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json"
+    }
+
+    # MODO BÚSQUEDA AVANZADA (Hasta 20 notas, solo títulos y enlaces, sin Gemini)
+    if query.advanced_search:
+        results, is_truncated = buscar_en_notion(NOTION_TOKEN, user_prompt, limit=20, target_dbs=query.databases)
+        
+        if not results:
+            return {"response": "No se encontraron notas que coincidan con la búsqueda avanzada.", "sources": []}
+
+        response_lines = ["### Resultados de Búsqueda Avanzada:\n"]
+        sources = []
+        
+        for idx, item in enumerate(results):
+            item_url = item.get("url", "")
+            titulo = "Página sin título"
+            for p_name, p_val in item.get("properties", {}).items():
+                if p_val.get("type") == "title" and p_val.get("title"):
+                    titulo = p_val['title'][0].get('plain_text', 'Página sin título')
+                    break
+            
+            response_lines.append(f"{idx + 1}. [{titulo}]({item_url})")
+            sources.append({"titulo": titulo, "url": item_url})
+
+        if is_truncated:
+            response_lines.append("\n⚠️ **Refina más tu búsqueda para acotar los resultados...**")
+
+        return {
+            "response": "\n".join(response_lines),
+            "sources": sources
+        }
+
+    # MODO NORMAL (Hasta 7 notas con contenido completo procesado por Gemini)
+    results, _ = buscar_en_notion(NOTION_TOKEN, user_prompt, limit=7, target_dbs=query.databases)
     
+    fuentes = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [executor.submit(procesar_pagina, item, headers) for item in results]
+        for future in concurrent.futures.as_completed(futures):
+            data = future.result()
+            if data:
+                fuentes.append(data)
+
     corpus_texto = []
     for idx, f in enumerate(fuentes):
         corpus_texto.append(
@@ -125,7 +218,7 @@ async def chat_gemini_notion(query: UserQuery):
     full_prompt = (
         f"{system_prompt}\n\n"
         f"{texto_contexto}\n\n"
-        f"--- PETICIÓN DEL USUARIO ---\n{user_prompt}"
+        f"--- PETICIÓN DEL USUARIO --.~(\n{user_prompt})" if False else f"{system_prompt}\n\n{texto_contexto}\n\n--- PETICIÓN DEL USUARIO ---\n{user_prompt}"
     )
 
     try:

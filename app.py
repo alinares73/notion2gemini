@@ -130,12 +130,14 @@ class SyncRequest(BaseModel):
 
 @app.post("/api/sync")
 async def sync_notion(req: SyncRequest):
-    """Devuelve las páginas actualizadas desde last_sync y una lista de todos los IDs activos (para borrar los eliminados)."""
+    print("--- INICIANDO SINCRONIZACIÓN ---")
     headers = notion_headers()
     try:
         last_sync_dt = datetime.fromisoformat(req.last_sync.replace('Z', '+00:00')) if req.last_sync else None
+        print(f"Última sync detectada: {last_sync_dt}")
     except:
         last_sync_dt = None
+        print("Sincronización inicial (desde cero)")
 
     db_nombre_por_id = listar_bases_de_datos(headers)
     all_search_items = []
@@ -152,10 +154,11 @@ async def sync_notion(req: SyncRequest):
         if not data.get("has_more"): break
         cursor = data.get("next_cursor")
 
+    print(f"Encontradas {len(all_search_items)} páginas en total en Notion.")
     active_ids = [item["id"] for item in all_search_items]
     pages_to_fetch = []
     
-    # 2. Filtrar solo las páginas que han sido editadas después de la última sincronización
+    # 2. Filtrar solo las páginas editadas
     for item in all_search_items:
         edited_str = item.get("last_edited_time")
         if edited_str:
@@ -163,16 +166,21 @@ async def sync_notion(req: SyncRequest):
             if not last_sync_dt or edited_dt > last_sync_dt:
                 pages_to_fetch.append(item)
 
-    # 3. Descargar el contenido profundo solo de las modificadas
+    print(f"Páginas a descargar por ser nuevas o modificadas: {len(pages_to_fetch)}")
+
+    # 3. Descargar contenido (BAJAMOS max_workers a 3 para no reventar la RAM de Render)
     updated_pages = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         futuros = [executor.submit(procesar_pagina_sync, item, headers, db_nombre_por_id) for item in pages_to_fetch]
-        for f in concurrent.futures.as_completed(futuros):
+        for idx, f in enumerate(concurrent.futures.as_completed(futuros)):
             try:
                 updated_pages.append(f.result())
-            except Exception:
-                pass
+                if (idx + 1) % 10 == 0:
+                    print(f"Descargadas {idx + 1} de {len(pages_to_fetch)} páginas...")
+            except Exception as e:
+                print(f"Error procesando una página: {e}")
 
+    print("--- SINCRONIZACIÓN COMPLETADA CON ÉXITO ---")
     return {
         "updated_pages": updated_pages,
         "active_ids": active_ids,
@@ -183,7 +191,7 @@ async def sync_notion(req: SyncRequest):
 class ChatRequest(BaseModel):
     prompt: str
     advanced_search: bool = False
-    context_pages: list = []  # El frontend nos envía las páginas ya filtradas y elegidas
+    context_pages: list = [] 
 
 @app.post("/api/chat")
 async def chat_gemini(req: ChatRequest):
@@ -191,9 +199,6 @@ async def chat_gemini(req: ChatRequest):
     if not user_prompt:
         raise HTTPException(status_code=400, detail="El prompt está vacío.")
 
-    # =========================================================
-    # MODO BÚSQUEDA AVANZADA
-    # =========================================================
     if req.advanced_search:
         if not req.context_pages:
             return {"response": "No se encontraron notas en tu caché que cumplan con los filtros.", "sources": []}
@@ -223,9 +228,6 @@ async def chat_gemini(req: ChatRequest):
             if "503" in error_str: raise HTTPException(status_code=503, detail={"type": "server_busy"})
             raise HTTPException(status_code=500, detail=str(e))
 
-    # =========================================================
-    # MODO BÚSQUEDA NORMAL
-    # =========================================================
     try:
         corpus_texto = []
         fuentes = []

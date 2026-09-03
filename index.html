@@ -91,22 +91,18 @@
   <header>
     <span class="gemini-sparkle">✦</span> Gemini + Notion
     <div class="header-actions">
-      <!-- Botón de Sincronizar Cache -->
       <button id="sync-btn" class="header-icon-btn" title="Actualizar notas">
         <svg id="sync-icon" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
       </button>
-      <!-- Botón de Fuentes -->
       <button id="sources-btn" class="header-icon-btn" title="Elegir Fuentes">
         <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
       </button>
-      <!-- Botón de Búsqueda Avanzada -->
       <button id="advanced-btn" class="header-icon-btn" title="Búsqueda Avanzada">
         <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
       </button>
     </div>
   </header>
 
-  <!-- Modal -->
   <div id="sources-modal" class="modal-overlay">
     <div class="modal-card">
       <div class="modal-title">Limitar consulta a fuentes:</div>
@@ -141,6 +137,9 @@
       window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(console.error));
     }
 
+    // ==========================================
+    // LÓGICA DE INDEXEDDB (CACHÉ LOCAL)
+    // ==========================================
     const DB_NAME = "GeminiNotionCache";
     let db;
     
@@ -185,11 +184,16 @@
       return new Promise((resolve) => {
         const tx = db.transaction('pages', 'readwrite');
         const store = tx.objectStore('pages');
+        
+        // Guardamos o actualizamos la nota por su ID
         updatedPages.forEach(p => store.put(p));
         tx.oncomplete = () => resolve();
       });
     }
 
+    // ==========================================
+    // SINCRONIZACIÓN CON EL SERVIDOR (BUCLE DE PAGINACIÓN)
+    // ==========================================
     const syncBtn = document.getElementById('sync-btn');
     const syncIcon = document.getElementById('sync-icon');
     const dbStatus = document.getElementById('db-status');
@@ -202,10 +206,11 @@
       try {
         const lastSync = await getMeta('last_sync');
         
+        // MENSAJES PERSONALIZADOS SEGÚN SEA LA PRIMERA VEZ O NO
         if (!lastSync) {
-          dbStatus.textContent = "Sincronizando notas completas por primera vez. Esto tardará unos minutos...";
+          dbStatus.textContent = "Sincronizando datos de Notion por primera vez. Puede tardar unos minutos...";
         } else {
-          dbStatus.textContent = "Buscando notas actualizadas...";
+          dbStatus.textContent = "Sincronizando notas con Notion...";
         }
         
         let hasMore = true;
@@ -213,6 +218,7 @@
         let totalDescargadas = 0;
         let finalSyncTime = null;
 
+        // Bucle que pide bloques de datos hasta que el servidor dice que no hay más
         while(hasMore) {
            const res = await fetch('/api/sync', {
               method: 'POST',
@@ -220,15 +226,17 @@
               body: JSON.stringify({ last_sync: lastSync || null, cursor: cursor })
            });
 
-           if (!res.ok) throw new Error("Error en la descarga del servidor.");
+           if (!res.ok) throw new Error("Fallo de red o servidor reiniciándose.");
            
            const data = await res.json();
            
            if(data.updated_pages.length > 0) {
                await syncPages(data.updated_pages);
                totalDescargadas += data.updated_pages.length;
+               
+               // Actualización visual para que sepas que está trabajando
                if (!lastSync) {
-                 dbStatus.textContent = `Descargando textos... (${totalDescargadas} guardadas)`;
+                 dbStatus.textContent = `Descargando... (${totalDescargadas} guardadas)`;
                } else {
                  dbStatus.textContent = `Actualizando... (${totalDescargadas} guardadas)`;
                }
@@ -239,15 +247,16 @@
            if (data.sync_time) finalSyncTime = data.sync_time;
         }
         
+        // Solo guardamos la fecha si el proceso entero tuvo éxito
         if(finalSyncTime) await setMeta('last_sync', finalSyncTime);
 
         const total = (await getAllPages()).length;
-        dbStatus.innerHTML = `✅ Caché local lista: <strong>${total}</strong> notas completas.`;
+        dbStatus.innerHTML = `✅ Caché lista: <strong>${total}</strong> notas indexadas.`;
 
       } catch (err) {
-        console.error("Error:", err);
+        console.error("Detalle del error:", err);
         dbStatus.classList.add('error');
-        dbStatus.textContent = "Fallo de conexión o timeout.";
+        dbStatus.textContent = "Fallo de conexión. El servidor tardó mucho o no tienes internet.";
       } finally {
         syncIcon.classList.remove('spin');
       }
@@ -255,6 +264,7 @@
 
     syncBtn.addEventListener('click', performSync);
 
+    // Inicializar app
     window.addEventListener('DOMContentLoaded', async () => {
       try {
         await initDB();
@@ -262,10 +272,11 @@
         if (pages.length === 0) {
           await performSync();
         } else {
-          dbStatus.innerHTML = `✅ Caché local lista: <strong>${pages.length}</strong> notas completas.`;
+          dbStatus.innerHTML = `✅ Caché lista: <strong>${pages.length}</strong> notas indexadas.`;
         }
       } catch (err) {
-        dbStatus.textContent = "Error al abrir la memoria del navegador.";
+        console.error("Error cargando base de datos local:", err);
+        dbStatus.textContent = "Error al abrir la memoria del navegador (Modo Incógnito?).";
       }
     });
 
@@ -300,6 +311,7 @@
     async function buscarLocalmente(texto, advanced, basesDatos) {
       let pages = await getAllPages();
       
+      // Filtro bases de datos
       if (basesDatos && basesDatos.length > 0) {
         const bdNorm = basesDatos.map(normalizarStr);
         pages = pages.filter(p => {
@@ -314,6 +326,7 @@
       if (advanced) {
         const { tags, logica, promptSemantico } = extraerTagsYLogica(texto);
         
+        // Filtro por tags local
         if (tags.length > 0) {
           const tagsNorm = tags.map(normalizarStr);
           pages = pages.filter(p => {
@@ -323,6 +336,7 @@
           });
         }
         
+        // Ordenar por relevancia de texto
         if (promptSemantico) {
           const palabras = promptSemantico.split(/\s+/).map(normalizarStr).filter(w => w.length > 2);
           if(palabras.length > 0){
@@ -332,8 +346,9 @@
                          .map(x => x.p);
           }
         }
-        return pages.slice(0, 60);
+        return pages.slice(0, 60); // Máximo 60 candidatos para IA
       } else {
+        // Búsqueda normal: Ordenar por TF-IDF local básico
         const palabras = texto.split(/\s+/).map(normalizarStr).filter(w => w.length > 2);
         if (palabras.length === 0) return pages.slice(0, 15);
         
@@ -341,10 +356,13 @@
                      .filter(x => x.score > 0)
                      .sort((a, b) => b.score - a.score)
                      .map(x => x.p);
-        return pages.slice(0, 15);
+        return pages.slice(0, 15); // Máximo 15 notas completas
       }
     }
 
+    // ==========================================
+    // INTERFAZ UI Y CHAT
+    // ==========================================
     const input = document.getElementById('prompt-input');
     const sendBtn = document.getElementById('send-btn');
     const chatContainer = document.getElementById('chat-container');
@@ -403,7 +421,7 @@
       const contentDiv = document.createElement('div');
       contentDiv.className = 'gemini-content typing-indicator';
       
-      contentDiv.innerHTML = `Analizando textos completos <span class="typing-dots"><span></span><span></span><span></span></span>`;
+      contentDiv.innerHTML = `Buscando en tu caché local <span class="typing-dots"><span></span><span></span><span></span></span>`;
       geminiCard.appendChild(iconDiv);
       geminiCard.appendChild(contentDiv);
       wrapperDiv.appendChild(geminiCard);
@@ -415,11 +433,11 @@
 
         if (contextPages.length === 0) {
            contentDiv.classList.remove('typing-indicator');
-           contentDiv.innerHTML = "No encontré coincidencias exactas en tus notas guardadas.";
+           contentDiv.innerHTML = "No encontré coincidencias en tu caché local. Intenta darle al botón de sincronizar 🔄.";
            return;
         }
 
-        contentDiv.innerHTML = `Generando respuesta con IA <span class="typing-dots"><span></span><span></span><span></span></span>`;
+        contentDiv.innerHTML = `Analizando con Gemini <span class="typing-dots"><span></span><span></span><span></span></span>`;
 
         const response = await fetch('/api/chat', {
           method: 'POST',
@@ -463,7 +481,7 @@
         if (error.isRateLimit) {
             contentDiv.innerHTML = `<div class="rate-limit-box">⚠️ <strong>Demasiadas peticiones.</strong> Espera un poco.</div>`;
         } else {
-            contentDiv.innerHTML = `<div class="rate-limit-box" style="border-color:#f4b400;">⏳ <strong>Servidor ocupado.</strong> Reintenta en unos segundos.</div>`;
+            contentDiv.innerHTML = `<div class="rate-limit-box" style="border-color:#f4b400;">⏳ <strong>Servidor ocupado o reiniciándose.</strong> Reintenta.</div>`;
         }
       } finally {
         chatContainer.scrollTop = chatContainer.scrollHeight;

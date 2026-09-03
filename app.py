@@ -27,7 +27,6 @@ NOTION_TOKEN = os.getenv("NOTION_TOKEN", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 CANDIDATOS_ETIQUETAS = ["Tags", "Etiquetas", "Etiqueta"]
-MAX_BLOCK_DEPTH = 3
 
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -76,30 +75,39 @@ def extraer_titulo_de_propiedades(properties: dict) -> str:
             return p_val["title"][0].get("plain_text", "Sin título")
     return "Sin título"
 
-def obtener_texto_bloques(block_id: str, headers: dict, profundidad: int = 0) -> str:
-    if profundidad > MAX_BLOCK_DEPTH: return ""
-    textos = []
-    cursor = None
-    while True:
-        url = f"https://api.notion.com/v1/blocks/{block_id}/children"
-        params = {"page_size": 100}
-        if cursor: params["start_cursor"] = cursor
-        try:
-            res = requests.get(url, headers=headers, params=params, timeout=10)
-        except Exception: break
-        if res.status_code != 200: break
+def obtener_texto_bloques(block_id: str, headers: dict) -> str:
+    """
+    VERSIÓN LIGERA (SNIPPET): 
+    Solo hace 1 petición por nota. Coge los primeros bloques hasta juntar un poco de contexto.
+    Sin bucles, sin recursividad, sin bloqueos.
+    """
+    url = f"https://api.notion.com/v1/blocks/{block_id}/children"
+    try:
+        # page_size=10 nos asegura traer solo el principio de la nota de golpe
+        res = requests.get(url, headers=headers, params={"page_size": 10}, timeout=10)
+        if res.status_code != 200: 
+            return ""
+            
         data = res.json()
+        textos = []
+        
         for b in data.get("results", []):
             b_type = b.get("type")
             contenido_bloque = b.get(b_type, {})
+            
             if isinstance(contenido_bloque, dict) and "rich_text" in contenido_bloque:
                 for segmento in contenido_bloque["rich_text"]:
                     textos.append(segmento.get("plain_text", ""))
-            if b.get("has_children"):
-                textos.append(obtener_texto_bloques(b["id"], headers, profundidad + 1))
-        if not data.get("has_more"): break
-        cursor = data.get("next_cursor")
-    return "\n".join(t for t in textos if t)
+            
+            # Si ya hemos recogido unos 300 caracteres de texto, paramos.
+            if sum(len(t) for t in textos) > 300:
+                break
+                
+        # Juntamos los trozos y lo limitamos por seguridad a 500 caracteres máximo
+        return "\n".join(t for t in textos if t)[:500]
+        
+    except Exception:
+        return ""
 
 def procesar_pagina_sync(item, headers, db_nombre_por_id):
     item_id = item["id"]
@@ -109,7 +117,8 @@ def procesar_pagina_sync(item, headers, db_nombre_por_id):
 
     titulo = extraer_titulo_de_propiedades(properties) if properties else "Página sin título"
     tags = extraer_tags_de_propiedades(properties) if db_id else []
-    # AQUÍ MANTENEMOS TU DESCARGA DE TEXTO COMPLETO
+    
+    # EXTRAE EL SNIPPET LIGERO
     contenido = obtener_texto_bloques(item_id, headers)
 
     return {
@@ -140,10 +149,10 @@ def sync_notion(req: SyncRequest):
 
     db_nombre_por_id = listar_bases_de_datos(headers)
 
-    # Pedimos a Notion en lotes de 20, ordenadas de más nuevas a más antiguas
+    # AQUÍ ESTÁ LA MAGIA: page_size llevado al límite máximo (100)
     payload = {
         "filter": {"value": "page", "property": "object"},
-        "page_size": 20,
+        "page_size": 100,
         "sort": {"direction": "descending", "timestamp": "last_edited_time"}
     }
     if req.cursor:
@@ -166,7 +175,6 @@ def sync_notion(req: SyncRequest):
         if edited_str and last_sync_dt:
             edited_dt = datetime.fromisoformat(edited_str.replace('Z', '+00:00'))
             if edited_dt <= last_sync_dt:
-                # Si llegamos a una nota que ya teníamos, paramos de buscar hacia atrás
                 stop_pagination = True
                 break
         pages_to_fetch.append(item)
@@ -175,7 +183,7 @@ def sync_notion(req: SyncRequest):
         has_more = False
         next_cursor = None
 
-    # Descargamos el TEXTO COMPLETO usando tus 8 hilos originales
+    # Mantenemos los 8 hilos simultáneos porque la función de snippet es ultra rápida
     updated_pages = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         futuros = [executor.submit(procesar_pagina_sync, item, headers, db_nombre_por_id) for item in pages_to_fetch]
@@ -242,7 +250,7 @@ def chat_gemini(req: ChatRequest):
                 f"--- FUENTE [{idx + 1}] ---\n"
                 f"Título de la Nota: {p.get('titulo')}\n"
                 f"URL de Notion: {p.get('url')}\n"
-                f"Contenido:\n{p.get('contenido', '')[:6000]}"
+                f"Contenido (Extracto):\n{p.get('contenido', '')}"
             )
         texto_contexto = "\n\n".join(corpus_texto) if corpus_texto else "No se encontraron notas relevantes."
 

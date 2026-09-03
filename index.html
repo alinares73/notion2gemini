@@ -17,411 +17,76 @@
 
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: 'Google Sans', 'Roboto', sans-serif;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Google Sans', 'Roboto', sans-serif; }
+    body { background-color: #131314; color: #e3e3e3; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+    header { padding: 16px 20px; font-size: 1.1rem; font-weight: 500; color: #c4c7c5; display: flex; align-items: center; gap: 10px; }
+    .gemini-sparkle { background: linear-gradient(135deg, #4285f4, #9b72cb, #d96570); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 700; font-size: 1.2rem; }
+    .header-actions { margin-left: auto; display: flex; gap: 8px; }
+    
+    .header-icon-btn { background: #1e1f20; border: 1px solid #333537; color: #c4c7c5; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; }
+    .header-icon-btn svg { width: 18px; height: 18px; fill: currentColor; }
+    .header-icon-btn:hover { background-color: #282a2c; color: #ffffff; border-color: #5b5e62; }
+    
+    /* Efecto giro botón de sincronización */
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
 
-    body {
-      background-color: #131314;
-      color: #e3e3e3;
-      display: flex;
-      flex-direction: column;
-      height: 100dvh;
-      overflow: hidden;
-    }
+    /* Botón Búsqueda Avanzada activo */
+    .header-icon-btn.advanced-active { background-color: #4a0000; border-color: #ff4a4a; color: #ff4a4a; }
 
-    header {
-      padding: 16px 20px;
-      font-size: 1.1rem;
-      font-weight: 500;
-      color: #c4c7c5;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
+    #chat-container { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 24px; scroll-behavior: smooth; }
+    .welcome-screen { margin: auto 0; text-align: left; padding: 0 10px; }
+    .welcome-title { font-size: 2.2rem; font-weight: 500; line-height: 1.2; background: linear-gradient(135deg, #4285f4, #9b72cb, #d96570); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 8px; }
+    .welcome-sub { color: #8e918f; font-size: 1.4rem; margin-bottom: 20px;}
+    .sync-status { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; color: #8e918f; background: #1e1f20; padding: 6px 12px; border-radius: 12px; border: 1px solid #333537;}
 
-    .gemini-sparkle {
-      background: linear-gradient(135deg, #4285f4, #9b72cb, #d96570);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      font-weight: 700;
-      font-size: 1.2rem;
-    }
+    .user-card { align-self: flex-end; background-color: #282a2c; color: #e3e3e3; padding: 12px 18px; border-radius: 20px; max-width: 85%; font-size: 1rem; line-height: 1.5; word-wrap: break-word; animation: slideUp 0.3s ease-out; }
+    .gemini-wrapper { display: flex; flex-direction: column; gap: 8px; width: 100%; animation: fadeIn 0.4s ease-out; }
+    .gemini-card { align-self: flex-start; width: 100%; font-size: 1rem; line-height: 1.6; color: #e3e3e3; display: flex; gap: 12px; }
+    .gemini-icon { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #4285f4, #9b72cb, #d96570); flex-shrink: 0; margin-top: 2px; }
+    .gemini-content { flex: 1; word-break: break-word; }
+    .gemini-content h1, .gemini-content h2, .gemini-content h3 { color: #f1f3f4; margin-top: 14px; margin-bottom: 8px; font-weight: 600; }
+    .gemini-content h3 { font-size: 1.15rem; }
+    .gemini-content p { margin-bottom: 12px; }
+    .gemini-content ul, .gemini-content ol { margin-left: 20px; margin-bottom: 12px; }
+    .gemini-content li { margin-bottom: 6px; }
+    .gemini-content strong { color: #ffffff; font-weight: 600; }
+    .gemini-content a { color: #e3d5b8 !important; text-decoration: underline !important; text-underline-offset: 3px; font-weight: 500; }
+    .gemini-content a:hover { color: #f4e8cb !important; }
 
-    .header-actions {
-      margin-left: auto;
-      display: flex;
-      gap: 8px;
-    }
+    .action-bar { display: flex; gap: 12px; margin-left: 40px; margin-top: 4px; }
+    .action-btn { background: transparent; border: 1px solid #333537; color: #c4c7c5; padding: 6px 12px; border-radius: 16px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s; }
+    .action-btn:hover { background-color: #282a2c; color: #ffffff; border-color: #5b5e62; }
+    .action-btn svg { width: 14px; height: 14px; fill: currentColor; }
 
-    .header-icon-btn {
-      background: #1e1f20;
-      border: 1px solid #333537;
-      color: #c4c7c5;
-      width: 38px;
-      height: 38px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .header-icon-btn svg {
-      width: 18px;
-      height: 18px;
-      fill: currentColor;
-    }
-
-    .header-icon-btn:hover {
-      background-color: #282a2c;
-      color: #ffffff;
-      border-color: #5b5e62;
-    }
-
-    /* Botón de Búsqueda Avanzada activo (Rojo mucho más llamativo) */
-    .header-icon-btn.advanced-active {
-      background-color: #4a0000;
-      border-color: #ff4a4a;
-      color: #ff4a4a;
-    }
-
-    #chat-container {
-      flex: 1;
-      overflow-y: auto;
-      padding: 16px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-      scroll-behavior: smooth;
-    }
-
-    .welcome-screen {
-      margin: auto 0;
-      text-align: left;
-      padding: 0 10px;
-    }
-
-    .welcome-title {
-      font-size: 2.2rem;
-      font-weight: 500;
-      line-height: 1.2;
-      background: linear-gradient(135deg, #4285f4, #9b72cb, #d96570);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      margin-bottom: 8px;
-    }
-
-    .welcome-sub {
-      color: #8e918f;
-      font-size: 1.4rem;
-    }
-
-    .user-card {
-      align-self: flex-end;
-      background-color: #282a2c;
-      color: #e3e3e3;
-      padding: 12px 18px;
-      border-radius: 20px;
-      max-width: 85%;
-      font-size: 1rem;
-      line-height: 1.5;
-      word-wrap: break-word;
-      animation: slideUp 0.3s ease-out;
-    }
-
-    .gemini-wrapper {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      width: 100%;
-      animation: fadeIn 0.4s ease-out;
-    }
-
-    .gemini-card {
-      align-self: flex-start;
-      width: 100%;
-      font-size: 1rem;
-      line-height: 1.6;
-      color: #e3e3e3;
-      display: flex;
-      gap: 12px;
-    }
-
-    .gemini-icon {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #4285f4, #9b72cb, #d96570);
-      flex-shrink: 0;
-      margin-top: 2px;
-    }
-
-    .gemini-content {
-      flex: 1;
-      word-break: break-word;
-    }
-
-    .gemini-content h1, .gemini-content h2, .gemini-content h3 {
-      color: #f1f3f4;
-      margin-top: 14px;
-      margin-bottom: 8px;
-      font-weight: 600;
-    }
-
-    .gemini-content h3 {
-      font-size: 1.15rem;
-    }
-
-    .gemini-content p {
-      margin-bottom: 12px;
-    }
-
-    .gemini-content ul, .gemini-content ol {
-      margin-left: 20px;
-      margin-bottom: 12px;
-    }
-
-    .gemini-content li {
-      margin-bottom: 6px;
-    }
-
-    .gemini-content strong {
-      color: #ffffff;
-      font-weight: 600;
-    }
-
-    .gemini-content hr {
-      border: 0;
-      height: 1px;
-      background: #333537;
-      margin: 16px 0;
-    }
-
-    .gemini-content code {
-      background-color: #282a2c;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-family: monospace;
-      font-size: 0.9em;
-    }
-
-    .gemini-content a {
-      color: #e3d5b8 !important;
-      text-decoration: underline !important;
-      text-underline-offset: 3px;
-      font-weight: 500;
-    }
-
-    .gemini-content a:hover {
-      color: #f4e8cb !important;
-    }
-
-    .action-bar {
-      display: flex;
-      gap: 12px;
-      margin-left: 40px;
-      margin-top: 4px;
-    }
-
-    .action-btn {
-      background: transparent;
-      border: 1px solid #333537;
-      color: #c4c7c5;
-      padding: 6px 12px;
-      border-radius: 16px;
-      font-size: 0.85rem;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.2s;
-    }
-
-    .action-btn:hover {
-      background-color: #282a2c;
-      color: #ffffff;
-      border-color: #5b5e62;
-    }
-
-    .action-btn svg {
-      width: 14px;
-      height: 14px;
-      fill: currentColor;
-    }
-
-    .typing-indicator {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      color: #8e918f;
-      font-style: italic;
-    }
-
-    .typing-dots span {
-      width: 5px;
-      height: 5px;
-      background-color: #8e918f;
-      border-radius: 50%;
-      display: inline-block;
-      animation: blink 1.4s infinite ease-in-out both;
-    }
-
+    .typing-indicator { display: inline-flex; align-items: center; gap: 4px; color: #8e918f; font-style: italic; }
+    .typing-dots span { width: 5px; height: 5px; background-color: #8e918f; border-radius: 50%; display: inline-block; animation: blink 1.4s infinite ease-in-out both; }
     .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
     .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1.0); } }
 
-    @keyframes blink {
-      0%, 80%, 100% { transform: scale(0); }
-      40% { transform: scale(1.0); }
-    }
-
-    .input-wrapper {
-      padding: 12px 16px 20px 16px;
-      background-color: #131314;
-    }
-
-    .input-pill {
-      background-color: #1e1f20;
-      border-radius: 28px;
-      display: flex;
-      align-items: center;
-      padding: 8px 16px;
-      border: 1px solid #333537;
-      transition: border-color 0.2s;
-    }
-
-    .input-pill:focus-within {
-      border-color: #5b5e62;
-    }
-
-    textarea {
-      flex: 1;
-      background: transparent;
-      border: none;
-      outline: none;
-      color: #e3e3e3;
-      font-size: 1rem;
-      resize: none;
-      max-height: 120px;
-      min-height: 24px;
-      line-height: 24px;
-    }
-
-    textarea::placeholder {
-      color: #8e918f;
-    }
-
-    .send-btn {
-      background: #e3e3e3;
-      border: none;
-      border-radius: 50%;
-      width: 36px;
-      height: 36px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      margin-left: 8px;
-      transition: all 0.2s;
-    }
-
-    .send-btn:disabled {
-      opacity: 0.3;
-      cursor: not-allowed;
-    }
-
-    .send-btn svg {
-      fill: #131314;
-      width: 18px;
-      height: 18px;
-      transition: fill 0.2s;
-    }
-
-    /* Flecha roja brillante cuando Búsqueda Avanzada está activa */
-    .send-btn.advanced-active {
-      background: #4a0000;
-      border: 1px solid #ff4a4a;
-    }
-    .send-btn.advanced-active svg {
-      fill: #ff4a4a;
-    }
-
-    /* Modal de Fuentes */
-    .modal-overlay {
-      position: fixed;
-      top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0,0,0,0.7);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-      animation: fadeIn 0.2s;
-    }
-
-    .modal-card {
-      background: #1e1f20;
-      border: 1px solid #333537;
-      padding: 24px;
-      border-radius: 16px;
-      width: 90%;
-      max-width: 340px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .modal-title {
-      font-size: 1.1rem;
-      font-weight: 500;
-      color: #f1f3f4;
-    }
-
-    .checkbox-group {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .checkbox-label {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 0.95rem;
-      color: #e3e3e3;
-      cursor: pointer;
-    }
-
-    .checkbox-label input {
-      accent-color: #4285f4;
-      width: 18px;
-      height: 18px;
-      cursor: pointer;
-    }
-
-    @keyframes slideUp {
-      from { opacity: 0; transform: translateY(15px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
+    .input-wrapper { padding: 12px 16px 20px 16px; background-color: #131314; }
+    .input-pill { background-color: #1e1f20; border-radius: 28px; display: flex; align-items: center; padding: 8px 16px; border: 1px solid #333537; transition: border-color 0.2s; }
+    .input-pill:focus-within { border-color: #5b5e62; }
+    textarea { flex: 1; background: transparent; border: none; outline: none; color: #e3e3e3; font-size: 1rem; resize: none; max-height: 120px; min-height: 24px; line-height: 24px; }
+    textarea::placeholder { color: #8e918f; }
     
-    .rate-limit-box {
-      background-color: #281d1d;
-      border: 1px solid #d96570;
-      color: #e3e3e3;
-      padding: 12px 16px;
-      border-radius: 8px;
-      display: inline-block;
-    }
+    .send-btn { background: #e3e3e3; border: none; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-left: 8px; transition: all 0.2s; }
+    .send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .send-btn svg { fill: #131314; width: 18px; height: 18px; transition: fill 0.2s; }
+    .send-btn.advanced-active { background: #4a0000; border: 1px solid #ff4a4a; }
+    .send-btn.advanced-active svg { fill: #ff4a4a; }
+
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 1000; animation: fadeIn 0.2s; }
+    .modal-card { background: #1e1f20; border: 1px solid #333537; padding: 24px; border-radius: 16px; width: 90%; max-width: 340px; display: flex; flex-direction: column; gap: 16px; }
+    .modal-title { font-size: 1.1rem; font-weight: 500; color: #f1f3f4; }
+    .checkbox-group { display: flex; flex-direction: column; gap: 12px; }
+    .checkbox-label { display: flex; align-items: center; gap: 10px; font-size: 0.95rem; color: #e3e3e3; cursor: pointer; }
+    .checkbox-label input { accent-color: #4285f4; width: 18px; height: 18px; cursor: pointer; }
+
+    @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .rate-limit-box { background-color: #281d1d; border: 1px solid #d96570; color: #e3e3e3; padding: 12px 16px; border-radius: 8px; display: inline-block; }
   </style>
 </head>
 <body>
@@ -429,31 +94,29 @@
   <header>
     <span class="gemini-sparkle">✦</span> Gemini + Notion
     <div class="header-actions">
-      <!-- Icono moderno de Carpeta/Base de datos -->
+      <!-- Botón de Sincronizar Cache -->
+      <button id="sync-btn" class="header-icon-btn" title="Actualizar notas">
+        <svg id="sync-icon" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+      </button>
+      <!-- Botón de Fuentes -->
       <button id="sources-btn" class="header-icon-btn" title="Elegir Fuentes">
         <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
       </button>
-      <!-- Icono moderno de Lupa de Búsqueda Avanzada -->
+      <!-- Botón de Búsqueda Avanzada -->
       <button id="advanced-btn" class="header-icon-btn" title="Búsqueda Avanzada">
         <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
       </button>
     </div>
   </header>
 
-  <!-- Modal para seleccionar Fuentes -->
+  <!-- Modal -->
   <div id="sources-modal" class="modal-overlay">
     <div class="modal-card">
       <div class="modal-title">Limitar consulta a fuentes:</div>
       <div class="checkbox-group">
-        <label class="checkbox-label">
-          <input type="checkbox" class="db-checkbox" value="Fichero citas" checked> Fichero citas
-        </label>
-        <label class="checkbox-label">
-          <input type="checkbox" class="db-checkbox" value="Diario oración" checked> Diario oración
-        </label>
-        <label class="checkbox-label">
-          <input type="checkbox" class="db-checkbox" value="Resúmenes de libros" checked> Resúmenes de libros
-        </label>
+        <label class="checkbox-label"><input type="checkbox" class="db-checkbox" value="Fichero citas" checked> Fichero citas</label>
+        <label class="checkbox-label"><input type="checkbox" class="db-checkbox" value="Diario oración" checked> Diario oración</label>
+        <label class="checkbox-label"><input type="checkbox" class="db-checkbox" value="Resúmenes de libros" checked> Resúmenes de libros</label>
       </div>
       <button id="close-modal-btn" class="action-btn" style="justify-content: center; margin-top: 8px;">Aceptar</button>
     </div>
@@ -462,7 +125,8 @@
   <main id="chat-container">
     <div class="welcome-screen" id="welcome-screen">
       <div class="welcome-title">Hola</div>
-      <div class="welcome-sub">¿Qué necesitas buscar o resumir de tu Notion?</div>
+      <div class="welcome-sub">¿Qué necesitas buscar de tu Notion?</div>
+      <div id="db-status" class="sync-status">Comprobando caché de Notion...</div>
     </div>
   </main>
 
@@ -477,37 +141,221 @@
 
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(console.error);
+      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(console.error));
+    }
+
+    // ==========================================
+    // LÓGICA DE INDEXEDDB (CACHÉ LOCAL)
+    // ==========================================
+    const DB_NAME = "GeminiNotionCache";
+    let db;
+    
+    function initDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = (e) => {
+          db = e.target.result;
+          if (!db.objectStoreNames.contains('pages')) db.createObjectStore('pages', { keyPath: 'id' });
+          if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
+        };
+        req.onsuccess = (e) => { db = e.target.result; resolve(); };
+        req.onerror = (e) => reject(e);
       });
     }
 
+    function getMeta(key) {
+      return new Promise((resolve) => {
+        const tx = db.transaction('meta', 'readonly');
+        const req = tx.objectStore('meta').get(key);
+        req.onsuccess = () => resolve(req.result ? req.result.value : null);
+      });
+    }
+
+    function setMeta(key, value) {
+      return new Promise((resolve) => {
+        const tx = db.transaction('meta', 'readwrite');
+        tx.objectStore('meta').put({ key, value });
+        tx.oncomplete = () => resolve();
+      });
+    }
+
+    function getAllPages() {
+      return new Promise((resolve) => {
+        const tx = db.transaction('pages', 'readonly');
+        const req = tx.objectStore('pages').getAll();
+        req.onsuccess = () => resolve(req.result);
+      });
+    }
+
+    function syncPages(updatedPages, activeIds) {
+      return new Promise((resolve) => {
+        const tx = db.transaction('pages', 'readwrite');
+        const store = tx.objectStore('pages');
+        
+        // Guardar/Actualizar páginas modificadas
+        updatedPages.forEach(p => store.put(p));
+        
+        // Borrar páginas que ya no existen en Notion
+        const reqAll = store.getAllKeys();
+        reqAll.onsuccess = () => {
+          const localKeys = reqAll.result;
+          const activeSet = new Set(activeIds);
+          localKeys.forEach(k => {
+            if (!activeSet.has(k)) store.delete(k);
+          });
+        };
+        tx.oncomplete = () => resolve();
+      });
+    }
+
+    // ==========================================
+    // SINCRONIZACIÓN CON EL SERVIDOR
+    // ==========================================
+    const syncBtn = document.getElementById('sync-btn');
+    const syncIcon = document.getElementById('sync-icon');
+    const dbStatus = document.getElementById('db-status');
+
+    async function performSync() {
+      if (syncIcon.classList.contains('spin')) return; // Evitar doble click
+      syncIcon.classList.add('spin');
+      dbStatus.textContent = "Sincronizando notas con Notion...";
+      
+      try {
+        const lastSync = await getMeta('last_sync');
+        const res = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ last_sync: lastSync })
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          await syncPages(data.updated_pages, data.active_ids);
+          await setMeta('last_sync', data.sync_time);
+          const total = (await getAllPages()).length;
+          dbStatus.innerHTML = `✅ Caché lista: <strong>${total}</strong> notas indexadas.`;
+        } else {
+          dbStatus.textContent = "Error al sincronizar.";
+        }
+      } catch (err) {
+        console.error(err);
+        dbStatus.textContent = "Fallo de conexión al sincronizar.";
+      } finally {
+        syncIcon.classList.remove('spin');
+      }
+    }
+
+    syncBtn.addEventListener('click', performSync);
+
+    // Inicializar app
+    window.addEventListener('DOMContentLoaded', async () => {
+      await initDB();
+      const pages = await getAllPages();
+      if (pages.length === 0) {
+        await performSync(); // Auto-sincronizar la primera vez
+      } else {
+        dbStatus.innerHTML = `✅ Caché lista: <strong>${pages.length}</strong> notas indexadas.`;
+      }
+    });
+
+    // ==========================================
+    // MOTOR DE BÚSQUEDA LOCAL (JavaScript)
+    // ==========================================
+    function normalizarStr(str) {
+      if (!str) return "";
+      return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    }
+
+    function extraerTagsYLogica(prompt) {
+      const tags = [];
+      const regex = /#([^\s,.]+)/g;
+      let match;
+      while ((match = regex.exec(prompt)) !== null) { tags.push(match[1]); }
+      const promptSemantico = prompt.replace(/#[^\s,.]+/g, '').trim();
+      const isOr = /#\w+\s+o\s+#\w+/.test(prompt.toLowerCase());
+      return { tags, logica: isOr ? 'or' : 'and', promptSemantico };
+    }
+
+    function puntuarPagina(pagina, palabrasClave) {
+      let puntuacion = 0;
+      palabrasClave.forEach(palabra => {
+        const tituloHits = (pagina.titulo_norm.match(new RegExp(palabra, 'g')) || []).length;
+        const contHits = (pagina.contenido_norm.match(new RegExp(palabra, 'g')) || []).length;
+        puntuacion += (tituloHits * 5) + contHits;
+      });
+      return puntuacion;
+    }
+
+    async function buscarLocalmente(texto, advanced, basesDatos) {
+      let pages = await getAllPages();
+      
+      // Filtro bases de datos
+      if (basesDatos && basesDatos.length > 0) {
+        const bdNorm = basesDatos.map(normalizarStr);
+        pages = pages.filter(p => {
+          const pDb = normalizarStr(p.db_nombre);
+          return bdNorm.some(bdObj => {
+            const palabras = bdObj.split(" ");
+            return palabras.every(pal => pDb.includes(pal));
+          });
+        });
+      }
+
+      if (advanced) {
+        const { tags, logica, promptSemantico } = extraerTagsYLogica(texto);
+        
+        // Filtro por tags local
+        if (tags.length > 0) {
+          const tagsNorm = tags.map(normalizarStr);
+          pages = pages.filter(p => {
+            const ptNorm = p.tags_norm || [];
+            const coincidencias = tagsNorm.map(t => ptNorm.some(pt => pt.includes(t)));
+            return logica === 'or' ? coincidencias.some(c=>c) : coincidencias.every(c=>c);
+          });
+        }
+        
+        // Ordenar por relevancia de texto
+        if (promptSemantico) {
+          const palabras = promptSemantico.split(/\s+/).map(normalizarStr).filter(w => w.length > 2);
+          if(palabras.length > 0){
+            pages = pages.map(p => ({ p, score: puntuarPagina(p, palabras) }))
+                         .filter(x => x.score > 0)
+                         .sort((a, b) => b.score - a.score)
+                         .map(x => x.p);
+          }
+        }
+        return pages.slice(0, 60); // Máximo 60 candidatos para IA
+      } else {
+        // Búsqueda normal: Ordenar por TF-IDF local básico
+        const palabras = texto.split(/\s+/).map(normalizarStr).filter(w => w.length > 2);
+        if (palabras.length === 0) return pages.slice(0, 15);
+        
+        pages = pages.map(p => ({ p, score: puntuarPagina(p, palabras) }))
+                     .filter(x => x.score > 0)
+                     .sort((a, b) => b.score - a.score)
+                     .map(x => x.p);
+        return pages.slice(0, 15); // Máximo 15 notas completas para el prompt
+      }
+    }
+
+
+    // ==========================================
+    // INTERFAZ UI Y CHAT
+    // ==========================================
     const input = document.getElementById('prompt-input');
     const sendBtn = document.getElementById('send-btn');
     const chatContainer = document.getElementById('chat-container');
     const welcomeScreen = document.getElementById('welcome-screen');
-    
     const sourcesBtn = document.getElementById('sources-btn');
     const sourcesModal = document.getElementById('sources-modal');
     const closeModalBtn = document.getElementById('close-modal-btn');
     const advancedBtn = document.getElementById('advanced-btn');
-
     let isAdvancedMode = false;
 
-    // Control del modal de fuentes
-    sourcesBtn.addEventListener('click', () => {
-      sourcesModal.style.display = 'flex';
-    });
+    sourcesBtn.addEventListener('click', () => sourcesModal.style.display = 'flex');
+    closeModalBtn.addEventListener('click', () => sourcesModal.style.display = 'none');
+    sourcesModal.addEventListener('click', (e) => { if (e.target === sourcesModal) sourcesModal.style.display = 'none'; });
 
-    closeModalBtn.addEventListener('click', () => {
-      sourcesModal.style.display = 'none';
-    });
-
-    sourcesModal.addEventListener('click', (e) => {
-      if (e.target === sourcesModal) sourcesModal.style.display = 'none';
-    });
-
-    // Control del botón de Búsqueda Avanzada
     advancedBtn.addEventListener('click', () => {
       isAdvancedMode = !isAdvancedMode;
       advancedBtn.classList.toggle('advanced-active', isAdvancedMode);
@@ -521,10 +369,7 @@
     });
 
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        if (input.value.trim() !== '') enviarMensaje();
-      }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (input.value.trim() !== '') enviarMensaje(); }
     });
 
     sendBtn.addEventListener('click', enviarMensaje);
@@ -535,8 +380,7 @@
 
       if (welcomeScreen) welcomeScreen.style.display = 'none';
 
-      const selectedDatabases = Array.from(document.querySelectorAll('.db-checkbox:checked'))
-        .map(cb => cb.value);
+      const selectedDatabases = Array.from(document.querySelectorAll('.db-checkbox:checked')).map(cb => cb.value);
 
       const userCard = document.createElement('div');
       userCard.className = 'user-card';
@@ -549,53 +393,49 @@
 
       const wrapperDiv = document.createElement('div');
       wrapperDiv.className = 'gemini-wrapper';
-
       const geminiCard = document.createElement('div');
       geminiCard.className = 'gemini-card';
-      
       const iconDiv = document.createElement('div');
       iconDiv.className = 'gemini-icon';
-
       const contentDiv = document.createElement('div');
       contentDiv.className = 'gemini-content typing-indicator';
       
-      const loadingText = isAdvancedMode 
-        ? `Búsqueda avanzada en Notion <span class="typing-dots"><span></span><span></span><span></span></span>`
-        : `Consultando tus notas de Notion <span class="typing-dots"><span></span><span></span><span></span></span>`;
-      contentDiv.innerHTML = loadingText;
-
+      contentDiv.innerHTML = `Buscando en tu caché local <span class="typing-dots"><span></span><span></span><span></span></span>`;
       geminiCard.appendChild(iconDiv);
       geminiCard.appendChild(contentDiv);
       wrapperDiv.appendChild(geminiCard);
       chatContainer.appendChild(wrapperDiv);
-
       chatContainer.scrollTop = chatContainer.scrollHeight;
 
       try {
+        // 1. EL NAVEGADOR HACE LA BÚSQUEDA PESADA
+        const contextPages = await buscarLocalmente(texto, isAdvancedMode, selectedDatabases);
+
+        if (contextPages.length === 0) {
+           contentDiv.classList.remove('typing-indicator');
+           contentDiv.innerHTML = "No encontré notas en tu caché local que coincidan con la búsqueda. Intenta darle al botón de sincronizar 🔄 por si hay notas nuevas.";
+           return;
+        }
+
+        contentDiv.innerHTML = `Analizando con Gemini <span class="typing-dots"><span></span><span></span><span></span></span>`;
+
+        // 2. ENVIAMOS SOLO LAS NOTAS FILTRADAS A GEMINI
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             prompt: texto, 
             advanced_search: isAdvancedMode,
-            databases: selectedDatabases
+            context_pages: contextPages // Array ya procesado
           })
         });
 
-        // Gestión de códigos de error HTTP
         if (!response.ok) {
             if (response.status === 429) {
                 const errData = await response.json();
                 throw { isRateLimit: true, waitSeconds: errData.detail.wait_seconds || 60 };
             }
-            if (response.status === 503) {
-                const errData = await response.json().catch(() => ({}));
-                if (errData?.detail?.type === 'index_building') {
-                    throw { isIndexBuilding: true };
-                }
-                throw { isServerBusy: true };
-            }
-            throw new Error(`Error: ${response.status}`);
+            throw { isServerBusy: true };
         }
 
         const data = await response.json();
@@ -604,77 +444,25 @@
 
         const actionBar = document.createElement('div');
         actionBar.className = 'action-bar';
-
         const copyBtn = document.createElement('button');
         copyBtn.className = 'action-btn';
         copyBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg> Copiar`;
         copyBtn.addEventListener('click', () => {
           navigator.clipboard.writeText(data.response).then(() => {
             copyBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/></svg> ¡Copiado!`;
-            setTimeout(() => {
-              copyBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg> Copiar`;
-            }, 2000);
+            setTimeout(() => { copyBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg> Copiar`; }, 2000);
           });
         });
 
         actionBar.appendChild(copyBtn);
         wrapperDiv.appendChild(actionBar);
 
-        contentDiv.querySelectorAll('a').forEach(link => {
-          link.addEventListener('click', (e) => {
-            const href = link.getAttribute('href');
-            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-            if (isMobile && href && href.includes('notion.so')) {
-              e.preventDefault();
-              const notionAppUrl = href.replace('https://www.notion.so', 'notion://www.notion.so').replace('https://notion.so', 'notion://notion.so');
-              window.location.href = notionAppUrl;
-              setTimeout(() => { window.open(href, '_blank'); }, 500);
-            }
-          });
-        });
-
       } catch (error) {
         contentDiv.classList.remove('typing-indicator');
-        
         if (error.isRateLimit) {
-            let timeLeft = error.waitSeconds;
-            contentDiv.innerHTML = `
-              <div class="rate-limit-box">
-                ⚠️ <strong>Demasiadas peticiones seguidas (API gratuita).</strong><br>
-                Google necesita que esperes <span id="timer" style="color: #d96570; font-weight: bold; font-size: 1.1em;">${timeLeft}</span> segundos antes de volver a preguntar.
-              </div>
-            `;
-            
-            const timerSpan = contentDiv.querySelector('#timer');
-            const interval = setInterval(() => {
-                timeLeft--;
-                if (timeLeft <= 0) {
-                    clearInterval(interval);
-                    contentDiv.innerHTML = `
-                      <div class="rate-limit-box" style="border-color: #4285f4; color: #4285f4;">
-                        ✅ <strong>¡Ya puedes volver a enviar tu pregunta!</strong>
-                      </div>
-                    `;
-                } else {
-                    timerSpan.textContent = timeLeft;
-                }
-            }, 1000);
-        } else if (error.isIndexBuilding) {
-            contentDiv.innerHTML = `
-              <div class="rate-limit-box" style="border-color: #4285f4; color: #e3e3e3;">
-                📚 <strong>Estoy indexando tu Notion por primera vez.</strong><br>
-                Puede tardar uno o dos minutos según cuántas notas tengas. Vuelve a preguntar en breve.
-              </div>
-            `;
-        } else if (error.isServerBusy) {
-            contentDiv.innerHTML = `
-              <div class="rate-limit-box" style="border-color: #f4b400; color: #e3e3e3;">
-                ⏳ <strong>Los servidores de Gemini están muy saturados ahora mismo.</strong><br>
-                Esto suele durar solo unos segundos. Por favor, pulsa enviar de nuevo.
-              </div>
-            `;
+            contentDiv.innerHTML = `<div class="rate-limit-box">⚠️ <strong>Demasiadas peticiones.</strong> Espera un poco.</div>`;
         } else {
-            contentDiv.textContent = 'Hubo un error al procesar la petición. Revisa el servidor.';
+            contentDiv.innerHTML = `<div class="rate-limit-box" style="border-color:#f4b400;">⏳ <strong>Servidores de Gemini ocupados.</strong> Reintenta.</div>`;
         }
       } finally {
         chatContainer.scrollTop = chatContainer.scrollHeight;

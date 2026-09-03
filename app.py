@@ -27,6 +27,7 @@ NOTION_TOKEN = os.getenv("NOTION_TOKEN", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 CANDIDATOS_ETIQUETAS = ["Tags", "Etiquetas", "Etiqueta"]
+MAX_BLOCK_DEPTH = 3
 
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -75,39 +76,51 @@ def extraer_titulo_de_propiedades(properties: dict) -> str:
             return p_val["title"][0].get("plain_text", "Sin título")
     return "Sin título"
 
-def obtener_texto_bloques(block_id: str, headers: dict) -> str:
-    """
-    VERSIÓN LIGERA (SNIPPET): 
-    Solo hace 1 petición por nota. Coge los primeros bloques hasta juntar un poco de contexto.
-    Sin bucles, sin recursividad, sin bloqueos.
-    """
+# --- FUNCION 1: EXTRACTO LIGERO (Para la Caché del Móvil) ---
+def obtener_texto_bloques_ligero(block_id: str, headers: dict) -> str:
     url = f"https://api.notion.com/v1/blocks/{block_id}/children"
     try:
-        # page_size=10 nos asegura traer solo el principio de la nota de golpe
         res = requests.get(url, headers=headers, params={"page_size": 10}, timeout=10)
-        if res.status_code != 200: 
-            return ""
-            
+        if res.status_code != 200: return ""
         data = res.json()
         textos = []
-        
         for b in data.get("results", []):
             b_type = b.get("type")
             contenido_bloque = b.get(b_type, {})
-            
             if isinstance(contenido_bloque, dict) and "rich_text" in contenido_bloque:
                 for segmento in contenido_bloque["rich_text"]:
                     textos.append(segmento.get("plain_text", ""))
-            
-            # Si ya hemos recogido unos 300 caracteres de texto, paramos.
-            if sum(len(t) for t in textos) > 300:
-                break
-                
-        # Juntamos los trozos y lo limitamos por seguridad a 500 caracteres máximo
+            if sum(len(t) for t in textos) > 300: break
         return "\n".join(t for t in textos if t)[:500]
-        
     except Exception:
         return ""
+
+# --- FUNCION 2: DESCARGA PROFUNDA (Para las candidatas definitivas) ---
+def obtener_texto_bloques_completo(block_id: str, headers: dict, profundidad: int = 0) -> str:
+    if profundidad > MAX_BLOCK_DEPTH: return ""
+    textos = []
+    cursor = None
+    while True:
+        url = f"https://api.notion.com/v1/blocks/{block_id}/children"
+        params = {"page_size": 100}
+        if cursor: params["start_cursor"] = cursor
+        try:
+            res = requests.get(url, headers=headers, params=params, timeout=10)
+        except Exception: break
+        if res.status_code != 200: break
+        data = res.json()
+        for b in data.get("results", []):
+            b_type = b.get("type")
+            contenido_bloque = b.get(b_type, {})
+            if isinstance(contenido_bloque, dict) and "rich_text" in contenido_bloque:
+                for segmento in contenido_bloque["rich_text"]:
+                    textos.append(segmento.get("plain_text", ""))
+            if b.get("has_children"):
+                textos.append(obtener_texto_bloques_completo(b["id"], headers, profundidad + 1))
+        if not data.get("has_more"): break
+        cursor = data.get("next_cursor")
+    return "\n".join(t for t in textos if t)
+
 
 def procesar_pagina_sync(item, headers, db_nombre_por_id):
     item_id = item["id"]
@@ -117,9 +130,7 @@ def procesar_pagina_sync(item, headers, db_nombre_por_id):
 
     titulo = extraer_titulo_de_propiedades(properties) if properties else "Página sin título"
     tags = extraer_tags_de_propiedades(properties) if db_id else []
-    
-    # EXTRAE EL SNIPPET LIGERO
-    contenido = obtener_texto_bloques(item_id, headers)
+    contenido = obtener_texto_bloques_ligero(item_id, headers)
 
     return {
         "id": item_id,
@@ -149,18 +160,15 @@ def sync_notion(req: SyncRequest):
 
     db_nombre_por_id = listar_bases_de_datos(headers)
 
-    # AQUÍ ESTÁ LA MAGIA: page_size llevado al límite máximo (100)
     payload = {
         "filter": {"value": "page", "property": "object"},
         "page_size": 100,
         "sort": {"direction": "descending", "timestamp": "last_edited_time"}
     }
-    if req.cursor:
-        payload["start_cursor"] = req.cursor
+    if req.cursor: payload["start_cursor"] = req.cursor
 
     res = requests.post("https://api.notion.com/v1/search", headers=headers, json=payload, timeout=15)
-    if res.status_code != 200:
-        raise HTTPException(status_code=500, detail="Error de conexión con Notion API")
+    if res.status_code != 200: raise HTTPException(status_code=500, detail="Error de conexión con Notion API")
     
     data = res.json()
     items = data.get("results", [])
@@ -183,7 +191,6 @@ def sync_notion(req: SyncRequest):
         has_more = False
         next_cursor = None
 
-    # Mantenemos los 8 hilos simultáneos porque la función de snippet es ultra rápida
     updated_pages = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         futuros = [executor.submit(procesar_pagina_sync, item, headers, db_nombre_por_id) for item in pages_to_fetch]
@@ -212,55 +219,71 @@ def chat_gemini(req: ChatRequest):
     if not user_prompt:
         raise HTTPException(status_code=400, detail="El prompt está vacío.")
 
-    if req.advanced_search:
-        if not req.context_pages:
-            return {"response": "No se encontraron notas en tu caché que cumplan con los filtros.", "sources": []}
+    # AHORA NOS QUEDAMOS CON LAS 20 MEJORES CANDIDATAS
+    top_candidatos = req.context_pages[:20]
 
+    # MODO BÚSQUEDA AVANZADA
+    if req.advanced_search:
+        if not top_candidatos: return {"response": "No se encontraron notas en tu caché que cumplan con los filtros.", "sources": []}
         gemini_user = f"INTENCIÓN DEL USUARIO: {user_prompt}\n\nNOTAS DISPONIBLES:\n"
-        for i, nota in enumerate(req.context_pages):
+        for i, nota in enumerate(top_candidatos):
             gemini_user += f"[{i + 1}] {nota.get('titulo', '')} - {nota.get('url', '')}\n"
 
         gemini_sys = (
-            f"Eres el cerebro del Buscador Avanzado. Tienes hasta {len(req.context_pages)} notas preseleccionadas localmente.\n"
-            f"Tu tarea: selecciona un MÁXIMO DE 20 títulos que mejor respondan a la intención.\n"
+            f"Eres el cerebro del Buscador Avanzado.\nTu tarea: selecciona los títulos que mejor respondan a la intención.\n"
             "INSTRUCCIÓN ESTRICTA: tu respuesta debe ser EXCLUSIVAMENTE una lista en formato Markdown numerado, con "
             "el título de cada nota como enlace clickeable. No añadas introducciones."
         )
-
         try:
             chat = ai_client.chats.create(model=GEMINI_MODEL)
             gem_res = chat.send_message(f"{gemini_sys}\n\n{gemini_user}")
-            
-            response_text = "### 🔍 Índices de Búsqueda Avanzada:\n\n" + gem_res.text
-            if len(req.context_pages) > 20:
-                response_text += "\n\n⚠️ **Nota:** Hay más resultados. Afina tu búsqueda."
-            return {"response": response_text, "sources": []}
+            return {"response": "### 🔍 Índices de Búsqueda Avanzada:\n\n" + gem_res.text, "sources": []}
         except Exception as e:
-            error_str = str(e)
-            if "429" in error_str: raise HTTPException(status_code=429, detail={"type": "rate_limit", "wait_seconds": 60})
-            if "503" in error_str: raise HTTPException(status_code=503, detail={"type": "server_busy"})
             raise HTTPException(status_code=500, detail=str(e))
 
+    # =========================================================
+    # MODO NORMAL: DESCARGA PROFUNDA JUST-IN-TIME (CRIBA INTELIGENTE)
+    # =========================================================
     try:
+        headers = notion_headers()
         corpus_texto = []
         fuentes = []
-        for idx, p in enumerate(req.context_pages):
-            fuentes.append({"titulo": p.get('titulo'), "url": p.get('url')})
+
+        def descargar_nota_entera(pagina):
+            texto_completo = obtener_texto_bloques_completo(pagina["id"], headers)
+            return {
+                "titulo": pagina.get("titulo", "Sin título"),
+                "url": pagina.get("url", ""),
+                "texto_completo": texto_completo
+            }
+
+        # Subimos a 10 hilos para procesar las 20 descargas profundas súper rápido
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            notas_completas = list(executor.map(descargar_nota_entera, top_candidatos))
+
+        for idx, nota in enumerate(notas_completas):
+            fuentes.append({"titulo": nota["titulo"], "url": nota["url"]})
             corpus_texto.append(
                 f"--- FUENTE [{idx + 1}] ---\n"
-                f"Título de la Nota: {p.get('titulo')}\n"
-                f"URL de Notion: {p.get('url')}\n"
-                f"Contenido (Extracto):\n{p.get('contenido', '')}"
+                f"Título de la Nota: {nota['titulo']}\n"
+                f"URL de Notion: {nota['url']}\n"
+                f"Contenido Íntegro:\n{nota['texto_completo']}\n"
             )
+
         texto_contexto = "\n\n".join(corpus_texto) if corpus_texto else "No se encontraron notas relevantes."
 
+        # NUEVO PROMPT REFORZADO PARA DESCARTAR FALSOS POSITIVOS
         system_prompt = (
-            "Eres un asistente conectado al espacio de Notion del usuario.\n"
+            "Eres un asistente conectado al espacio de Notion del usuario. Has recibido el texto íntegro de hasta 20 notas candidatas "
+            "encontradas mediante un buscador de palabras clave.\n"
             "INSTRUCCIONES OBLIGATORIAS:\n"
-            "1. Incluye abundantes citas textuales y directas.\n"
-            "2. NO escribas nombres largos de notas dentro del texto redactado.\n"
-            "3. Tras cada cita o afirmación, coloca un número de referencia correlativo entre "
-            "paréntesis como enlace Markdown: `([1](URL_DE_NOTION))`. Utiliza estrictamente las URLs de las fuentes."
+            "1. CRIBA INTELIGENTE: Tienes un exceso intencionado de información. Debes leer y evaluar qué notas responden realmente "
+            "a la intención del usuario y DESECHAR IGNORANDO POR COMPLETO aquellas notas que sean falsos positivos o no aporten valor a la respuesta.\n"
+            "2. Redacta tu respuesta basándote ÚNICAMENTE en las notas que has considerado verdaderamente relevantes.\n"
+            "3. Incluye abundantes citas textuales y directas extraídas de las notas elegidas.\n"
+            "4. NO escribas nombres largos de notas dentro del texto redactado.\n"
+            "5. Tras cada cita o afirmación, coloca un número de referencia correlativo entre "
+            "paréntesis como enlace Markdown: `([1](URL_DE_NOTION))`. Utiliza estrictamente las URLs de las fuentes correctas."
         )
 
         full_prompt = f"{system_prompt}\n\n{texto_contexto}\n\n--- PETICIÓN DEL USUARIO ---\n{user_prompt}"

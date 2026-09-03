@@ -12,9 +12,7 @@
   <meta name="apple-mobile-web-app-title" content="GeminiNotion">
   <link rel="apple-touch-icon" href="/icon-192.png">
 
-  <!-- Librería Marked para convertir Markdown a HTML -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Google Sans', 'Roboto', sans-serif; }
@@ -27,11 +25,9 @@
     .header-icon-btn svg { width: 18px; height: 18px; fill: currentColor; }
     .header-icon-btn:hover { background-color: #282a2c; color: #ffffff; border-color: #5b5e62; }
     
-    /* Efecto giro botón de sincronización */
     .spin { animation: spin 1s linear infinite; }
     @keyframes spin { 100% { transform: rotate(360deg); } }
 
-    /* Botón Búsqueda Avanzada activo */
     .header-icon-btn.advanced-active { background-color: #4a0000; border-color: #ff4a4a; color: #ff4a4a; }
 
     #chat-container { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 24px; scroll-behavior: smooth; }
@@ -39,6 +35,7 @@
     .welcome-title { font-size: 2.2rem; font-weight: 500; line-height: 1.2; background: linear-gradient(135deg, #4285f4, #9b72cb, #d96570); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 8px; }
     .welcome-sub { color: #8e918f; font-size: 1.4rem; margin-bottom: 20px;}
     .sync-status { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; color: #8e918f; background: #1e1f20; padding: 6px 12px; border-radius: 12px; border: 1px solid #333537;}
+    .sync-status.error { border-color: #d96570; color: #d96570; }
 
     .user-card { align-self: flex-end; background-color: #282a2c; color: #e3e3e3; padding: 12px 18px; border-radius: 20px; max-width: 85%; font-size: 1rem; line-height: 1.5; word-wrap: break-word; animation: slideUp 0.3s ease-out; }
     .gemini-wrapper { display: flex; flex-direction: column; gap: 8px; width: 100%; animation: fadeIn 0.4s ease-out; }
@@ -192,10 +189,8 @@
         const tx = db.transaction('pages', 'readwrite');
         const store = tx.objectStore('pages');
         
-        // Guardar/Actualizar páginas modificadas
         updatedPages.forEach(p => store.put(p));
         
-        // Borrar páginas que ya no existen en Notion
         const reqAll = store.getAllKeys();
         reqAll.onsuccess = () => {
           const localKeys = reqAll.result;
@@ -216,16 +211,19 @@
     const dbStatus = document.getElementById('db-status');
 
     async function performSync() {
-      if (syncIcon.classList.contains('spin')) return; // Evitar doble click
+      if (syncIcon.classList.contains('spin')) return; 
       syncIcon.classList.add('spin');
-      dbStatus.textContent = "Sincronizando notas con Notion...";
+      dbStatus.classList.remove('error');
+      dbStatus.textContent = "Sincronizando notas. Esto puede tardar si hay muchas nuevas...";
       
       try {
         const lastSync = await getMeta('last_sync');
+        
+        // Enviamos el POST al servidor
         const res = await fetch('/api/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ last_sync: lastSync })
+          body: JSON.stringify({ last_sync: lastSync || null })
         });
         
         if (res.ok) {
@@ -235,11 +233,13 @@
           const total = (await getAllPages()).length;
           dbStatus.innerHTML = `✅ Caché lista: <strong>${total}</strong> notas indexadas.`;
         } else {
-          dbStatus.textContent = "Error al sincronizar.";
+          dbStatus.classList.add('error');
+          dbStatus.textContent = "Error del servidor. Quizás aún se está reiniciando.";
         }
       } catch (err) {
-        console.error(err);
-        dbStatus.textContent = "Fallo de conexión al sincronizar.";
+        console.error("Detalle del error:", err);
+        dbStatus.classList.add('error');
+        dbStatus.textContent = "Fallo de red. El servidor se ha reiniciado o no tienes internet.";
       } finally {
         syncIcon.classList.remove('spin');
       }
@@ -249,17 +249,22 @@
 
     // Inicializar app
     window.addEventListener('DOMContentLoaded', async () => {
-      await initDB();
-      const pages = await getAllPages();
-      if (pages.length === 0) {
-        await performSync(); // Auto-sincronizar la primera vez
-      } else {
-        dbStatus.innerHTML = `✅ Caché lista: <strong>${pages.length}</strong> notas indexadas.`;
+      try {
+        await initDB();
+        const pages = await getAllPages();
+        if (pages.length === 0) {
+          await performSync();
+        } else {
+          dbStatus.innerHTML = `✅ Caché lista: <strong>${pages.length}</strong> notas indexadas.`;
+        }
+      } catch (err) {
+        console.error("Error cargando base de datos local:", err);
+        dbStatus.textContent = "Error al abrir la memoria del navegador (Modo Incógnito?).";
       }
     });
 
     // ==========================================
-    // MOTOR DE BÚSQUEDA LOCAL (JavaScript)
+    // MOTOR DE BÚSQUEDA LOCAL
     // ==========================================
     function normalizarStr(str) {
       if (!str) return "";
@@ -334,10 +339,9 @@
                      .filter(x => x.score > 0)
                      .sort((a, b) => b.score - a.score)
                      .map(x => x.p);
-        return pages.slice(0, 15); // Máximo 15 notas completas para el prompt
+        return pages.slice(0, 15); // Máximo 15 notas completas
       }
     }
-
 
     // ==========================================
     // INTERFAZ UI Y CHAT
@@ -462,7 +466,7 @@
         if (error.isRateLimit) {
             contentDiv.innerHTML = `<div class="rate-limit-box">⚠️ <strong>Demasiadas peticiones.</strong> Espera un poco.</div>`;
         } else {
-            contentDiv.innerHTML = `<div class="rate-limit-box" style="border-color:#f4b400;">⏳ <strong>Servidores de Gemini ocupados.</strong> Reintenta.</div>`;
+            contentDiv.innerHTML = `<div class="rate-limit-box" style="border-color:#f4b400;">⏳ <strong>Servidor ocupado o reiniciándose.</strong> Reintenta.</div>`;
         }
       } finally {
         chatContainer.scrollTop = chatContainer.scrollHeight;

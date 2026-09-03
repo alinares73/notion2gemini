@@ -25,6 +25,7 @@ app.add_middleware(
 
 NOTION_TOKEN = os.getenv("NOTION_TOKEN", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+# ✅ Restaurado a tu modelo preferido
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 CANDIDATOS_ETIQUETAS = ["Tags", "Etiquetas", "Etiqueta"]
 MAX_BLOCK_DEPTH = 3
@@ -85,7 +86,7 @@ def obtener_texto_bloques(block_id: str, headers: dict, profundidad: int = 0) ->
         params = {"page_size": 100}
         if cursor: params["start_cursor"] = cursor
         try:
-            res = requests.get(url, headers=headers, params=params, timeout=8)
+            res = requests.get(url, headers=headers, params=params, timeout=10)
         except Exception: break
         if res.status_code != 200: break
         data = res.json()
@@ -128,37 +129,35 @@ def procesar_pagina_sync(item, headers, db_nombre_por_id):
 class SyncRequest(BaseModel):
     last_sync: Optional[str] = None
 
+# Función sin 'async' para no bloquear el servidor
 @app.post("/api/sync")
-async def sync_notion(req: SyncRequest):
-    print("--- INICIANDO SINCRONIZACIÓN ---")
+def sync_notion(req: SyncRequest):
+    print("Iniciando sincronización con Notion...")
     headers = notion_headers()
     try:
         last_sync_dt = datetime.fromisoformat(req.last_sync.replace('Z', '+00:00')) if req.last_sync else None
-        print(f"Última sync detectada: {last_sync_dt}")
     except:
         last_sync_dt = None
-        print("Sincronización inicial (desde cero)")
 
     db_nombre_por_id = listar_bases_de_datos(headers)
     all_search_items = []
     cursor = None
     
-    # 1. Obtener metadatos de todas las páginas
+    # 1. Obtener metadatos
     while True:
         payload = {"filter": {"value": "page", "property": "object"}, "page_size": 100}
         if cursor: payload["start_cursor"] = cursor
-        res = requests.post("https://api.notion.com/v1/search", headers=headers, json=payload, timeout=10)
+        res = requests.post("https://api.notion.com/v1/search", headers=headers, json=payload, timeout=15)
         if res.status_code != 200: break
         data = res.json()
         all_search_items.extend(data.get("results", []))
         if not data.get("has_more"): break
         cursor = data.get("next_cursor")
 
-    print(f"Encontradas {len(all_search_items)} páginas en total en Notion.")
     active_ids = [item["id"] for item in all_search_items]
     pages_to_fetch = []
     
-    # 2. Filtrar solo las páginas editadas
+    # 2. Filtrar páginas editadas
     for item in all_search_items:
         edited_str = item.get("last_edited_time")
         if edited_str:
@@ -166,39 +165,41 @@ async def sync_notion(req: SyncRequest):
             if not last_sync_dt or edited_dt > last_sync_dt:
                 pages_to_fetch.append(item)
 
-    print(f"Páginas a descargar por ser nuevas o modificadas: {len(pages_to_fetch)}")
+    print(f"Hay {len(pages_to_fetch)} notas que descargar o actualizar.")
 
-    # 3. Descargar contenido (BAJAMOS max_workers a 3 para no reventar la RAM de Render)
+    # 3. Descarga controlada a 3 hilos
     updated_pages = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         futuros = [executor.submit(procesar_pagina_sync, item, headers, db_nombre_por_id) for item in pages_to_fetch]
-        for idx, f in enumerate(concurrent.futures.as_completed(futuros)):
+        for f in concurrent.futures.as_completed(futuros):
             try:
-                updated_pages.append(f.result())
-                if (idx + 1) % 10 == 0:
-                    print(f"Descargadas {idx + 1} de {len(pages_to_fetch)} páginas...")
+                result = f.result()
+                if result:
+                    updated_pages.append(result)
             except Exception as e:
-                print(f"Error procesando una página: {e}")
+                print(f"Error procesando una nota: {e}")
 
-    print("--- SINCRONIZACIÓN COMPLETADA CON ÉXITO ---")
+    print("Sincronización finalizada correctamente.")
     return {
         "updated_pages": updated_pages,
         "active_ids": active_ids,
         "sync_time": datetime.now(timezone.utc).isoformat()
     }
 
-
 class ChatRequest(BaseModel):
     prompt: str
     advanced_search: bool = False
-    context_pages: list = [] 
+    context_pages: list = []
 
 @app.post("/api/chat")
-async def chat_gemini(req: ChatRequest):
+def chat_gemini(req: ChatRequest):
     user_prompt = req.prompt.strip()
     if not user_prompt:
         raise HTTPException(status_code=400, detail="El prompt está vacío.")
 
+    # =========================================================
+    # MODO BÚSQUEDA AVANZADA
+    # =========================================================
     if req.advanced_search:
         if not req.context_pages:
             return {"response": "No se encontraron notas en tu caché que cumplan con los filtros.", "sources": []}
@@ -228,6 +229,9 @@ async def chat_gemini(req: ChatRequest):
             if "503" in error_str: raise HTTPException(status_code=503, detail={"type": "server_busy"})
             raise HTTPException(status_code=500, detail=str(e))
 
+    # =========================================================
+    # MODO BÚSQUEDA NORMAL
+    # =========================================================
     try:
         corpus_texto = []
         fuentes = []
@@ -265,10 +269,10 @@ async def chat_gemini(req: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
-async def root(): return FileResponse("index.html")
+def root(): return FileResponse("index.html")
 @app.get("/manifest.json")
-async def get_manifest(): return FileResponse("manifest.json")
+def get_manifest(): return FileResponse("manifest.json")
 @app.get("/sw.js")
-async def get_sw(): return FileResponse("sw.js", media_type="application/javascript")
+def get_sw(): return FileResponse("sw.js", media_type="application/javascript")
 @app.get("/icon-192.png")
-async def get_icon(): return FileResponse("icon-192.png")
+def get_icon(): return FileResponse("icon-192.png")

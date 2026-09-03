@@ -4,6 +4,8 @@ import traceback
 import unicodedata
 import concurrent.futures
 from datetime import datetime, timezone
+from typing import Optional
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -124,7 +126,7 @@ def procesar_pagina_sync(item, headers, db_nombre_por_id):
     }
 
 class SyncRequest(BaseModel):
-    last_sync: str = None
+    last_sync: Optional[str] = None
 
 @app.post("/api/sync")
 async def sync_notion(req: SyncRequest):

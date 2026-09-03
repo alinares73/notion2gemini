@@ -52,6 +52,45 @@
       font-size: 1.2rem;
     }
 
+    .header-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+    }
+
+    .header-icon-btn {
+      background: #1e1f20;
+      border: 1px solid #333537;
+      color: #c4c7c5;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .header-icon-btn svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+    }
+
+    .header-icon-btn:hover {
+      background-color: #282a2c;
+      color: #ffffff;
+      border-color: #5b5e62;
+    }
+
+    /* Botón de Búsqueda Avanzada activo (Rojo Brillante Neón) */
+    .header-icon-btn.advanced-active {
+      background-color: #4a0000;
+      border-color: #ff2020;
+      color: #ff2020;
+    }
+
     #chat-container {
       flex: 1;
       overflow-y: auto;
@@ -97,6 +136,14 @@
       animation: slideUp 0.3s ease-out;
     }
 
+    .gemini-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+      animation: fadeIn 0.4s ease-out;
+    }
+
     .gemini-card {
       align-self: flex-start;
       width: 100%;
@@ -105,7 +152,6 @@
       color: #e3e3e3;
       display: flex;
       gap: 12px;
-      animation: fadeIn 0.4s ease-out;
     }
 
     .gemini-icon {
@@ -166,9 +212,8 @@
       font-size: 0.9em;
     }
 
-    /* Estilo personalizado para enlaces a Notion: Beige y Subrayado */
     .gemini-content a {
-      color: #e3d5b8 !important; /* Tono beige */
+      color: #e3d5b8 !important;
       text-decoration: underline !important;
       text-underline-offset: 3px;
       font-weight: 500;
@@ -176,6 +221,39 @@
 
     .gemini-content a:hover {
       color: #f4e8cb !important;
+    }
+
+    .action-bar {
+      display: flex;
+      gap: 12px;
+      margin-left: 40px;
+      margin-top: 4px;
+    }
+
+    .action-btn {
+      background: transparent;
+      border: 1px solid #333537;
+      color: #c4c7c5;
+      padding: 6px 12px;
+      border-radius: 16px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .action-btn:hover {
+      background-color: #282a2c;
+      color: #ffffff;
+      border-color: #5b5e62;
+    }
+
+    .action-btn svg {
+      width: 14px;
+      height: 14px;
+      fill: currentColor;
     }
 
     .typing-indicator {
@@ -195,13 +273,8 @@
       animation: blink 1.4s infinite ease-in-out both;
     }
 
-    .typing-dots span:nth-child(2) {
-      animation-delay: 0.2s;
-    }
-
-    .typing-dots span:nth-child(3) {
-      animation-delay: 0.4s;
-    }
+    .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
 
     @keyframes blink {
       0%, 80%, 100% { transform: scale(0); }
@@ -255,7 +328,7 @@
       justify-content: center;
       cursor: pointer;
       margin-left: 8px;
-      transition: opacity 0.2s;
+      transition: all 0.2s;
     }
 
     .send-btn:disabled {
@@ -267,6 +340,68 @@
       fill: #131314;
       width: 18px;
       height: 18px;
+      transition: fill 0.2s;
+    }
+
+    /* Flecha roja brillante cuando Búsqueda Avanzada está activa */
+    .send-btn.advanced-active {
+      background: #4a0000;
+      border: 1px solid #ff2020;
+    }
+    .send-btn.advanced-active svg {
+      fill: #ff2020;
+    }
+
+    /* Modal de Fuentes */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      animation: fadeIn 0.2s;
+    }
+
+    .modal-card {
+      background: #1e1f20;
+      border: 1px solid #333537;
+      padding: 24px;
+      border-radius: 16px;
+      width: 90%;
+      max-width: 340px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .modal-title {
+      font-size: 1.1rem;
+      font-weight: 500;
+      color: #f1f3f4;
+    }
+
+    .checkbox-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.95rem;
+      color: #e3e3e3;
+      cursor: pointer;
+    }
+
+    .checkbox-label input {
+      accent-color: #4285f4;
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
     }
 
     @keyframes slideUp {
@@ -278,13 +413,51 @@
       from { opacity: 0; }
       to { opacity: 1; }
     }
+    
+    .rate-limit-box {
+      background-color: #281d1d;
+      border: 1px solid #d96570;
+      color: #e3e3e3;
+      padding: 12px 16px;
+      border-radius: 8px;
+      display: inline-block;
+    }
   </style>
 </head>
 <body>
 
   <header>
     <span class="gemini-sparkle">✦</span> Gemini + Notion
+    <div class="header-actions">
+      <!-- Icono moderno de Carpeta/Base de datos -->
+      <button id="sources-btn" class="header-icon-btn" title="Elegir Fuentes">
+        <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+      </button>
+      <!-- Icono moderno de Lupa de Búsqueda Avanzada -->
+      <button id="advanced-btn" class="header-icon-btn" title="Búsqueda Avanzada">
+        <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      </button>
+    </div>
   </header>
+
+  <!-- Modal para seleccionar Fuentes -->
+  <div id="sources-modal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-title">Limitar consulta a fuentes:</div>
+      <div class="checkbox-group">
+        <label class="checkbox-label">
+          <input type="checkbox" class="db-checkbox" value="Fichero citas" checked> Fichero citas
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" class="db-checkbox" value="Diario oración" checked> Diario oración
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" class="db-checkbox" value="Resúmenes de libros" checked> Resúmenes de libros
+        </label>
+      </div>
+      <button id="close-modal-btn" class="action-btn" style="justify-content: center; margin-top: 8px;">Aceptar</button>
+    </div>
+  </div>
 
   <main id="chat-container">
     <div class="welcome-screen" id="welcome-screen">
@@ -313,6 +486,33 @@
     const sendBtn = document.getElementById('send-btn');
     const chatContainer = document.getElementById('chat-container');
     const welcomeScreen = document.getElementById('welcome-screen');
+    
+    const sourcesBtn = document.getElementById('sources-btn');
+    const sourcesModal = document.getElementById('sources-modal');
+    const closeModalBtn = document.getElementById('close-modal-btn');
+    const advancedBtn = document.getElementById('advanced-btn');
+
+    let isAdvancedMode = false;
+
+    // Control del modal de fuentes
+    sourcesBtn.addEventListener('click', () => {
+      sourcesModal.style.display = 'flex';
+    });
+
+    closeModalBtn.addEventListener('click', () => {
+      sourcesModal.style.display = 'none';
+    });
+
+    sourcesModal.addEventListener('click', (e) => {
+      if (e.target === sourcesModal) sourcesModal.style.display = 'none';
+    });
+
+    // Control del botón de Búsqueda Avanzada
+    advancedBtn.addEventListener('click', () => {
+      isAdvancedMode = !isAdvancedMode;
+      advancedBtn.classList.toggle('advanced-active', isAdvancedMode);
+      sendBtn.classList.toggle('advanced-active', isAdvancedMode);
+    });
 
     input.addEventListener('input', () => {
       input.style.height = 'auto';
@@ -327,13 +527,16 @@
       }
     });
 
-    sendBtn.dispatchClick = sendBtn.addEventListener('click', enviarMensaje);
+    sendBtn.addEventListener('click', enviarMensaje);
 
     async function enviarMensaje() {
       const texto = input.value.trim();
       if (!texto) return;
 
       if (welcomeScreen) welcomeScreen.style.display = 'none';
+
+      const selectedDatabases = Array.from(document.querySelectorAll('.db-checkbox:checked'))
+        .map(cb => cb.value);
 
       const userCard = document.createElement('div');
       userCard.className = 'user-card';
@@ -344,6 +547,9 @@
       input.style.height = 'auto';
       sendBtn.disabled = true;
 
+      const wrapperDiv = document.createElement('div');
+      wrapperDiv.className = 'gemini-wrapper';
+
       const geminiCard = document.createElement('div');
       geminiCard.className = 'gemini-card';
       
@@ -352,11 +558,16 @@
 
       const contentDiv = document.createElement('div');
       contentDiv.className = 'gemini-content typing-indicator';
-      contentDiv.innerHTML = `Buscando en tus notas de Notion y pensando <span class="typing-dots"><span></span><span></span><span></span></span>`;
+      
+      const loadingText = isAdvancedMode 
+        ? `Buscando en tus notas avanzadas de Notion <span class="typing-dots"><span></span><span></span><span></span></span>`
+        : `Buscando en tus notas de Notion y pensando <span class="typing-dots"><span></span><span></span><span></span></span>`;
+      contentDiv.innerHTML = loadingText;
 
       geminiCard.appendChild(iconDiv);
       geminiCard.appendChild(contentDiv);
-      chatContainer.appendChild(geminiCard);
+      wrapperDiv.appendChild(geminiCard);
+      chatContainer.appendChild(wrapperDiv);
 
       chatContainer.scrollTop = chatContainer.scrollHeight;
 
@@ -364,39 +575,96 @@
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: texto })
+          body: JSON.stringify({ 
+            prompt: texto, 
+            advanced_search: isAdvancedMode,
+            databases: selectedDatabases
+          })
         });
 
+        // Gestión de códigos de error HTTP
         if (!response.ok) {
-          throw new Error(`Error: ${response.status}`);
+            if (response.status === 429) {
+                const errData = await response.json();
+                throw { isRateLimit: true, waitSeconds: errData.detail.wait_seconds || 60 };
+            }
+            if (response.status === 503) {
+                throw { isServerBusy: true };
+            }
+            throw new Error(`Error: ${response.status}`);
         }
 
         const data = await response.json();
         contentDiv.classList.remove('typing-indicator');
         contentDiv.innerHTML = marked.parse(data.response);
 
-        // Interceptar clics en enlaces para abrirlos con el protocolo de la App de Notion en móviles si es posible
+        const actionBar = document.createElement('div');
+        actionBar.className = 'action-bar';
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'action-btn';
+        copyBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg> Copiar`;
+        copyBtn.addEventListener('click', () => {
+          navigator.clipboard.writeText(data.response).then(() => {
+            copyBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/></svg> ¡Copiado!`;
+            setTimeout(() => {
+              copyBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg> Copiar`;
+            }, 2000);
+          });
+        });
+
+        actionBar.appendChild(copyBtn);
+        wrapperDiv.appendChild(actionBar);
+
         contentDiv.querySelectorAll('a').forEach(link => {
           link.addEventListener('click', (e) => {
             const href = link.getAttribute('href');
-            // Detectar si está en móvil (Android/iOS)
             const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-            if (isMobile && href.includes('notion.so')) {
-              // Convertir la URL web de notion a esquema nativo notion:// para forzar apertura en app
+            if (isMobile && href && href.includes('notion.so')) {
               e.preventDefault();
               const notionAppUrl = href.replace('https://www.notion.so', 'notion://www.notion.so').replace('https://notion.so', 'notion://notion.so');
               window.location.href = notionAppUrl;
-              // Fallback por si la app no está instalada: abrir web tras un pequeño retardo
-              setTimeout(() => {
-                window.open(href, '_blank');
-              }, 500);
+              setTimeout(() => { window.open(href, '_blank'); }, 500);
             }
           });
         });
 
       } catch (error) {
         contentDiv.classList.remove('typing-indicator');
-        contentDiv.textContent = 'Hubo un error al conectar con Notion o Gemini. Revisa el servidor.';
+        
+        if (error.isRateLimit) {
+            let timeLeft = error.waitSeconds;
+            contentDiv.innerHTML = `
+              <div class="rate-limit-box">
+                ⚠️ <strong>Demasiadas peticiones seguidas (API gratuita).</strong><br>
+                Google necesita que esperes <span id="timer" style="color: #d96570; font-weight: bold; font-size: 1.1em;">${timeLeft}</span> segundos antes de volver a preguntar.
+              </div>
+            `;
+            
+            const timerSpan = contentDiv.querySelector('#timer');
+            const interval = setInterval(() => {
+                timeLeft--;
+                if (timeLeft <= 0) {
+                    clearInterval(interval);
+                    contentDiv.innerHTML = `
+                      <div class="rate-limit-box" style="border-color: #4285f4; color: #4285f4;">
+                        ✅ <strong>¡Ya puedes volver a enviar tu pregunta!</strong>
+                      </div>
+                    `;
+                } else {
+                    timerSpan.textContent = timeLeft;
+                }
+            }, 1000);
+        } else if (error.isServerBusy) {
+            contentDiv.innerHTML = `
+              <div class="rate-limit-box" style="border-color: #f4b400; color: #e3e3e3;">
+                ⏳ <strong>Los servidores de Gemini están muy saturados ahora mismo.</strong><br>
+                Esto suele durar solo unos segundos. Por favor, pulsa enviar de nuevo.
+              </div>
+            `;
+        } else {
+            contentDiv.textContent = 'Hubo un error al procesar la petición. Revisa el servidor.';
+        }
       } finally {
         chatContainer.scrollTop = chatContainer.scrollHeight;
       }

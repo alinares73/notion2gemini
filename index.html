@@ -84,11 +84,11 @@
       border-color: #5b5e62;
     }
 
-    /* Botón de Búsqueda Avanzada activo (Rojo Brillante Neón) */
+    /* Botón de Búsqueda Avanzada activo (Rojo mucho más llamativo) */
     .header-icon-btn.advanced-active {
       background-color: #4a0000;
-      border-color: #ff2020;
-      color: #ff2020;
+      border-color: #ff4a4a;
+      color: #ff4a4a;
     }
 
     #chat-container {
@@ -346,10 +346,10 @@
     /* Flecha roja brillante cuando Búsqueda Avanzada está activa */
     .send-btn.advanced-active {
       background: #4a0000;
-      border: 1px solid #ff2020;
+      border: 1px solid #ff4a4a;
     }
     .send-btn.advanced-active svg {
-      fill: #ff2020;
+      fill: #ff4a4a;
     }
 
     /* Modal de Fuentes */
@@ -589,6 +589,10 @@
                 throw { isRateLimit: true, waitSeconds: errData.detail.wait_seconds || 60 };
             }
             if (response.status === 503) {
+                const errData = await response.json().catch(() => ({}));
+                if (errData?.detail?.type === 'index_building') {
+                    throw { isIndexBuilding: true };
+                }
                 throw { isServerBusy: true };
             }
             throw new Error(`Error: ${response.status}`);
@@ -655,6 +659,13 @@
                     timerSpan.textContent = timeLeft;
                 }
             }, 1000);
+        } else if (error.isIndexBuilding) {
+            contentDiv.innerHTML = `
+              <div class="rate-limit-box" style="border-color: #4285f4; color: #e3e3e3;">
+                📚 <strong>Estoy indexando tu Notion por primera vez.</strong><br>
+                Puede tardar uno o dos minutos según cuántas notas tengas. Vuelve a preguntar en breve.
+              </div>
+            `;
         } else if (error.isServerBusy) {
             contentDiv.innerHTML = `
               <div class="rate-limit-box" style="border-color: #f4b400; color: #e3e3e3;">

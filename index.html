@@ -125,7 +125,7 @@
 
   <div class="input-wrapper">
     <div class="input-pill">
-      <textarea id="prompt-input" rows="1" placeholder="Pide algo a Gemini sobre tu Notion..."></textarea>
+      <textarea id="prompt-input" rows="1" placeholder="Ej: &quot;Chiara Corbella&quot; o #biografias..."></textarea>
       <button id="send-btn" class="send-btn" disabled>
         <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
       </button>
@@ -142,11 +142,15 @@
     
     function initDB() {
       return new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, 1);
+        // AQUÍ ESTÁ LA MAGIA: Subimos la versión a 2. Esto borra la caché inútil de 500 caracteres 
+        // y nos asegura descargar los extractos largos de 8000.
+        const req = indexedDB.open(DB_NAME, 2); 
         req.onupgradeneeded = (e) => {
           db = e.target.result;
-          if (!db.objectStoreNames.contains('pages')) db.createObjectStore('pages', { keyPath: 'id' });
-          if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
+          if (db.objectStoreNames.contains('pages')) db.deleteObjectStore('pages');
+          if (db.objectStoreNames.contains('meta')) db.deleteObjectStore('meta');
+          db.createObjectStore('pages', { keyPath: 'id' });
+          db.createObjectStore('meta', { keyPath: 'key' });
         };
         req.onsuccess = (e) => { db = e.target.result; resolve(); };
         req.onerror = (e) => reject(e);
@@ -199,7 +203,7 @@
         const lastSync = await getMeta('last_sync');
         
         if (!lastSync) {
-          dbStatus.textContent = "Sincronizando datos de Notion por primera vez. Puede tardar unos minutos...";
+          dbStatus.textContent = "Recreando caché extendida por primera vez. Puede tardar unos minutos...";
         } else {
           dbStatus.textContent = "Sincronizando notas con Notion...";
         }
@@ -225,7 +229,7 @@
                totalDescargadas += data.updated_pages.length;
                
                if (!lastSync) {
-                 dbStatus.textContent = `Descargando índices... (${totalDescargadas} guardadas)`;
+                 dbStatus.textContent = `Descargando textos ampliados... (${totalDescargadas} guardadas)`;
                } else {
                  dbStatus.textContent = `Actualizando... (${totalDescargadas} guardadas)`;
                }
@@ -239,7 +243,7 @@
         if(finalSyncTime) await setMeta('last_sync', finalSyncTime);
 
         const total = (await getAllPages()).length;
-        dbStatus.innerHTML = `✅ Caché lista: <strong>${total}</strong> notas indexadas.`;
+        dbStatus.innerHTML = `✅ Caché lista: <strong>${total}</strong> notas ampliadas indexadas.`;
 
       } catch (err) {
         console.error("Detalle del error:", err);
@@ -259,7 +263,7 @@
         if (pages.length === 0) {
           await performSync();
         } else {
-          dbStatus.innerHTML = `✅ Caché lista: <strong>${pages.length}</strong> notas indexadas.`;
+          dbStatus.innerHTML = `✅ Caché lista: <strong>${pages.length}</strong> notas ampliadas indexadas.`;
         }
       } catch (err) {
         console.error("Error cargando base de datos local:", err);
@@ -268,7 +272,7 @@
     });
 
     // ==========================================
-    // MOTOR DE BÚSQUEDA LOCAL CON FILTRO ESTRICTO
+    // MOTOR DE BÚSQUEDA LOCAL: ALGORITMO MEJORADO
     // ==========================================
     function normalizarStr(str) {
       if (!str) return "";
@@ -281,7 +285,6 @@
       let match;
       while ((match = regexTags.exec(prompt)) !== null) { tags.push(match[1]); }
       
-      // NUEVO: Extraer frases exactas entre comillas dobles
       const frasesExactas = [];
       const regexFrases = /"([^"]+)"/g;
       let promptLimpio = prompt;
@@ -298,20 +301,32 @@
     }
 
     function puntuarPagina(pagina, palabrasClave) {
-      let puntuacion = 0;
+      let puntuacionTotal = 0;
+      let palabrasEncontradasUnicas = 0;
+
       palabrasClave.forEach(palabra => {
         const tituloHits = (pagina.titulo_norm.match(new RegExp(palabra, 'g')) || []).length;
         const contHits = (pagina.contenido_norm.match(new RegExp(palabra, 'g')) || []).length;
-        puntuacion += (tituloHits * 5) + contHits;
+        
+        const hitsTotales = (tituloHits * 10) + contHits;
+        if (hitsTotales > 0) {
+          palabrasEncontradasUnicas++;
+          puntuacionTotal += hitsTotales;
+        }
       });
-      return puntuacion;
+
+      // MAGIA: Multiplicador masivo para notas que coinciden con VARIAS palabras diferentes.
+      // Una nota que tenga "chiara" Y "corbella" destruye en puntos a una que tenga "vida" 50 veces.
+      if (palabrasEncontradasUnicas > 0) {
+         return puntuacionTotal * Math.pow(10, palabrasEncontradasUnicas);
+      }
+      return 0;
     }
 
     async function buscarLocalmente(texto, advanced, basesDatos) {
       let pages = await getAllPages();
       const { tags, logica, promptSemantico, frasesExactas } = extraerFiltros(texto);
 
-      // Filtro de bases de datos
       if (basesDatos && basesDatos.length > 0) {
         const bdNorm = basesDatos.map(normalizarStr);
         pages = pages.filter(p => {
@@ -323,7 +338,6 @@
         });
       }
 
-      // NUEVO: Criba estricta para las comillas "Chiara Corbella"
       if (frasesExactas.length > 0) {
         pages = pages.filter(p => {
           const textoTotal = p.titulo_norm + " " + p.contenido_norm;
@@ -331,7 +345,6 @@
         });
       }
 
-      // Filtro de etiquetas (#)
       if (tags.length > 0) {
         const tagsNorm = tags.map(normalizarStr);
         pages = pages.filter(p => {
@@ -341,8 +354,7 @@
         });
       }
 
-      // Ordenar por relevancia si escribiste palabras extra sueltas
-      const palabras = promptSemantico.split(/\s+/).map(normalizarStr).filter(w => w.length > 2);
+      const palabras = promptSemantico.split(/\s+/).map(normalizarStr).filter(w => w.length > 3);
       
       if (palabras.length > 0) {
         pages = pages.map(p => ({ p, score: puntuarPagina(p, palabras) }))
@@ -351,13 +363,9 @@
                      .map(x => x.p);
       }
       
-      // Enviamos el top 20 para el servidor
       return advanced ? pages.slice(0, 60) : pages.slice(0, 20); 
     }
 
-    // ==========================================
-    // INTERFAZ UI Y CHAT
-    // ==========================================
     const input = document.getElementById('prompt-input');
     const sendBtn = document.getElementById('send-btn');
     const chatContainer = document.getElementById('chat-container');

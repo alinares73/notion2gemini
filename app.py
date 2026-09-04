@@ -76,11 +76,12 @@ def extraer_titulo_de_propiedades(properties: dict) -> str:
             return p_val["title"][0].get("plain_text", "Sin título")
     return "Sin título"
 
-# --- FUNCION 1: EXTRACTO LIGERO (Para la Caché del Móvil) ---
+# --- FUNCION 1: EXTRACTO MEJORADO (Ahora guarda hasta 8000 caracteres, pero sigue tardando lo mismo) ---
 def obtener_texto_bloques_ligero(block_id: str, headers: dict) -> str:
     url = f"https://api.notion.com/v1/blocks/{block_id}/children"
     try:
-        res = requests.get(url, headers=headers, params={"page_size": 10}, timeout=10)
+        # page_size=100 es el máximo de Notion. Es 1 sola petición, pero nos trae todo el texto principal.
+        res = requests.get(url, headers=headers, params={"page_size": 100}, timeout=10)
         if res.status_code != 200: return ""
         data = res.json()
         textos = []
@@ -90,12 +91,12 @@ def obtener_texto_bloques_ligero(block_id: str, headers: dict) -> str:
             if isinstance(contenido_bloque, dict) and "rich_text" in contenido_bloque:
                 for segmento in contenido_bloque["rich_text"]:
                     textos.append(segmento.get("plain_text", ""))
-            if sum(len(t) for t in textos) > 300: break
-        return "\n".join(t for t in textos if t)[:500]
+        
+        # Ahora juntamos todo el texto de esa primera página de resultados sin cortarlo tan pronto
+        return "\n".join(t for t in textos if t)[:8000]
     except Exception:
         return ""
 
-# --- FUNCION 2: DESCARGA PROFUNDA (Para las candidatas definitivas) ---
 def obtener_texto_bloques_completo(block_id: str, headers: dict, profundidad: int = 0) -> str:
     if profundidad > MAX_BLOCK_DEPTH: return ""
     textos = []
@@ -130,6 +131,8 @@ def procesar_pagina_sync(item, headers, db_nombre_por_id):
 
     titulo = extraer_titulo_de_propiedades(properties) if properties else "Página sin título"
     tags = extraer_tags_de_propiedades(properties) if db_id else []
+    
+    # Usa el extracto mejorado
     contenido = obtener_texto_bloques_ligero(item_id, headers)
 
     return {
@@ -219,10 +222,8 @@ def chat_gemini(req: ChatRequest):
     if not user_prompt:
         raise HTTPException(status_code=400, detail="El prompt está vacío.")
 
-    # AHORA NOS QUEDAMOS CON LAS 20 MEJORES CANDIDATAS
     top_candidatos = req.context_pages[:20]
 
-    # MODO BÚSQUEDA AVANZADA
     if req.advanced_search:
         if not top_candidatos: return {"response": "No se encontraron notas en tu caché que cumplan con los filtros.", "sources": []}
         gemini_user = f"INTENCIÓN DEL USUARIO: {user_prompt}\n\nNOTAS DISPONIBLES:\n"
@@ -241,9 +242,6 @@ def chat_gemini(req: ChatRequest):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    # =========================================================
-    # MODO NORMAL: DESCARGA PROFUNDA JUST-IN-TIME (CRIBA INTELIGENTE)
-    # =========================================================
     try:
         headers = notion_headers()
         corpus_texto = []
@@ -257,7 +255,6 @@ def chat_gemini(req: ChatRequest):
                 "texto_completo": texto_completo
             }
 
-        # Subimos a 10 hilos para procesar las 20 descargas profundas súper rápido
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             notas_completas = list(executor.map(descargar_nota_entera, top_candidatos))
 
@@ -272,18 +269,15 @@ def chat_gemini(req: ChatRequest):
 
         texto_contexto = "\n\n".join(corpus_texto) if corpus_texto else "No se encontraron notas relevantes."
 
-        # NUEVO PROMPT REFORZADO PARA DESCARTAR FALSOS POSITIVOS
         system_prompt = (
-            "Eres un asistente conectado al espacio de Notion del usuario. Has recibido el texto íntegro de hasta 20 notas candidatas "
-            "encontradas mediante un buscador de palabras clave.\n"
+            "Eres un asistente conectado al espacio de Notion del usuario. Has recibido el texto íntegro de hasta 20 notas candidatas.\n"
             "INSTRUCCIONES OBLIGATORIAS:\n"
-            "1. CRIBA INTELIGENTE: Tienes un exceso intencionado de información. Debes leer y evaluar qué notas responden realmente "
-            "a la intención del usuario y DESECHAR IGNORANDO POR COMPLETO aquellas notas que sean falsos positivos o no aporten valor a la respuesta.\n"
-            "2. Redacta tu respuesta basándote ÚNICAMENTE en las notas que has considerado verdaderamente relevantes.\n"
-            "3. Incluye abundantes citas textuales y directas extraídas de las notas elegidas.\n"
+            "1. CRIBA INTELIGENTE: Lee y evalúa qué notas responden realmente a la intención del usuario y DESECHA IGNORANDO POR COMPLETO "
+            "aquellas que sean falsos positivos o coincidencias tangenciales (por ejemplo, si pide Chiara Corbella, ignora notas de santos aleatorios).\n"
+            "2. Redacta tu respuesta basándote ÚNICAMENTE en las notas verdaderamente relevantes.\n"
+            "3. Incluye abundantes citas textuales.\n"
             "4. NO escribas nombres largos de notas dentro del texto redactado.\n"
-            "5. Tras cada cita o afirmación, coloca un número de referencia correlativo entre "
-            "paréntesis como enlace Markdown: `([1](URL_DE_NOTION))`. Utiliza estrictamente las URLs de las fuentes correctas."
+            "5. Tras cada cita o afirmación, coloca un número de referencia correlativo entre paréntesis como enlace Markdown: `([1](URL_DE_NOTION))`."
         )
 
         full_prompt = f"{system_prompt}\n\n{texto_contexto}\n\n--- PETICIÓN DEL USUARIO ---\n{user_prompt}"
